@@ -4,6 +4,7 @@
 #include <QVector>
 #include <QPolygonF>
 #include <QPointF>
+#include <QLineF>
 #include <QxPoly2Tri>
 
 DoomMap::DoomMap()
@@ -344,10 +345,20 @@ static int DoomMapSectorAreaSort(const void* a, const void* b)
     return 0;
 }
 
-// recursive function to locate the exact line within current shape when current subsector self-intersects (example: doom.wad e1m1)
-static bool DoomMapSectorCheckIntersection(QVector<DoomMapLinedef*>& linedefs, QVector<DoomMapLinedef*>& checkedlinedefs, DoomMapLinedef* ld, DoomMapSector* sector)
+// linedefs = total linedefs for current sector
+// checkedlinedefs = linedefs that are already assigned to polygons
+// prevld = previous linedef (v2 of which is used)
+// sector = current sector
+static DoomMapLinedef* DoomMapSectorResolveIntersection(QVector<DoomMapLinedef*>& linedefs, QVector<DoomMapLinedef*>& checkedlinedefs, DoomMapLinedef* prevld, DoomMapSector* sector)
 {
-    DoomMapVertex* vertex = ld->getV1(sector);
+    // an intersection is when a single vertex points to multiple lines.
+    // we resolve this by picking the line with the smallest angle.
+    DoomMapVertex* ov2 = prevld->getV2(sector); // this is the vertex that has multiple endpoints (or not)
+    DoomMapVertex* ov1 = prevld->getV1(sector);
+
+    qreal minAngle = 360;
+    DoomMapLinedef* minLinedef = 0;
+
     // check if current vertex is v1 for more than one linedef.
     for (int i = 0; i < linedefs.size(); i++)
     {
@@ -355,77 +366,27 @@ static bool DoomMapSectorCheckIntersection(QVector<DoomMapLinedef*>& linedefs, Q
         if (checkedlinedefs.contains(linedef))
             continue;
 
-        if (linedef == ld)
-            continue;
-
         DoomMapVertex* v1 = linedef->getV1(sector);
-        if (v1 == vertex ||
-            ((*v1)["x"] == (*vertex)["x"] &&
-             (*v1)["y"] == (*vertex)["y"])) return true;
-    }
-
-    return false;
-}
-
-// linedefs = total linedefs for current sector
-// checkedlinedefs = linedefs that are already assigned to polygons
-// vs = current start vertex
-// search = closing vertex to find.
-// sector = current sector
-// checkedvertices = intersecting vertices that were already traversed (for recursive check)
-static DoomMapLinedef* DoomMapSectorResolveIntersection(QVector<DoomMapLinedef*>& linedefs, QVector<DoomMapLinedef*>& checkedlinedefs, DoomMapVertex* vs, DoomMapVertex* search, DoomMapSector* sector, QVector<DoomMapVertex*>& checkedvertices)
-{
-    // an intersection is when a single vertex points to multiple lines.
-    // we resolve this by finding the shortest loop that ends with the current line.
-
-    DoomMapVertex* vs = ls->getV1(sector);
-    DoomMapVertex* vp = 0;
-
-    QPolygonF poly;
-
-    QVector<DoomMapVertex*> checkedvertices;
-    bool dbrk = false;
-    while (!dbrk)
-    {
-        dbrk = true;
-        for (int i = 0; i < linedefs.size(); i++)
+        DoomMapVertex* v2 = linedef->getV2(sector);
+        if (v1 == ov2 ||
+            (v1->getX() == ov2->getX() &&
+             v1->getY() == ov2->getY()))
         {
-            DoomMapLinedef* linedef = linedefs[i];
-
-            if (checkedlinedefs.contains(linedef))
-                continue; //
-
-            DoomMapVertex* v1 = linedef->getV1(this);
-            DoomMapVertex* v2 = linedef->getV2(this);
-
-            if (vp) // check if this line is the next one.
+            // this line has v1 set at v2 of the reference line.
+            // calculate angle.
+            qreal cAngle = QLineF(ov1->getX(), ov1->getY(), ov2->getX(), ov2->getY()).angleTo(QLineF(v1->getX(), v1->getY(), v2->getX(), v2->getY()));
+            if (cAngle < minAngle)
             {
-                if (vp == v1 ||
-                    ((*vp)["x"] == (*v1)["x"] &&
-                     (*vp)["y"] == (*v1)["y"]))
-                {
-                    // check if we need this particular line. sometimes, more than one line matches the same vertex.
-                    if (DoomMapSectorCheckIntersection(linedefs, checkedlinedefs, linedef, this))
-                    {
-                        qDebug("sector %d has self-intersections", this-p->sectors.data());
-                    }
-
-                    if (checkedvertices.contains(v1))
-                    {
-                        dbrk = true;
-                        break; // unclosed sector
-                    }
-
-                    // add this vertex
-                    poly.append(QPointF((*v1)["x"].toReal(), (*v1)["y"].toReal()));
-                    checkedvertices.append(v1);
-                    vp = v2;
-                    dbrk = (vp == vs || ((*vp)["x"] == (*vs)["x"] && (*vp)["y"] == (*vs)["y"]));
-                    continue;
-                }
+                DoomMap* map = sector->getParent();
+                qDebug("line %d has angle %f to line %d for sector %d",
+                       linedef-map->linedefs.data(), cAngle, prevld-map->linedefs.data(), sector-map->sectors.data());
+                minLinedef = linedef;
+                minAngle = cAngle;
             }
         }
     }
+
+    return minLinedef;
 }
 
 void DoomMapSector::triangulate()
@@ -462,6 +423,7 @@ void DoomMapSector::triangulate()
     {
         DoomMapVertex* vs = 0;
         DoomMapVertex* vp = 0;
+        DoomMapLinedef* lastlinedef = 0;
 
         QPolygonF poly;
 
@@ -484,11 +446,12 @@ void DoomMapSector::triangulate()
                 //
                 if (!vs)
                 {
-                    poly.append(QPointF((*v1)["x"].toReal(), (*v1)["y"].toReal()));
+                    poly.append(QPointF(v1->getX(), v1->getY()));
                     checkedvertices.append(v1);
                     vs = v1;
                     vp = v2;
                     lastcheckedlinedefs.append(linedef);
+                    lastlinedef = linedef;
                     dbrk = false;
                     continue;
                 }
@@ -496,14 +459,14 @@ void DoomMapSector::triangulate()
                 if (vp) // check if this line is the next one.
                 {
                     if (vp == v1 ||
-                        ((*vp)["x"] == (*v1)["x"] &&
-                         (*vp)["y"] == (*v1)["y"]))
+                        (vp->getX() == v1->getX() &&
+                         vp->getY() == v1->getY()))
                     {
                         // check if we need this particular line. sometimes, more than one line matches the same vertex.
-                        if (DoomMapSectorCheckIntersection(linedefs, checkedlinedefs, linedef, this))
-                        {
-                            qDebug("sector %d has self-intersections", this-p->sectors.data());
-                        }
+                        if (lastlinedef && DoomMapSectorResolveIntersection(linedefs, checkedlinedefs, lastlinedef, this) != linedef)
+                            continue;
+
+                        lastlinedef = linedef;
 
                         if (checkedvertices.contains(v1))
                         {
@@ -512,11 +475,11 @@ void DoomMapSector::triangulate()
                         }
 
                         // add this vertex
-                        poly.append(QPointF((*v1)["x"].toReal(), (*v1)["y"].toReal()));
+                        poly.append(QPointF(v1->getX(), v1->getY()));
                         checkedvertices.append(v1);
                         vp = v2;
                         lastcheckedlinedefs.append(linedef);
-                        dbrk = (vp == vs || ((*vp)["x"] == (*vs)["x"] && (*vp)["y"] == (*vs)["y"]));
+                        dbrk = (vp == vs || (vp->getX() == vs->getX() && vp->getY() == vs->getY()));
                         continue;
                     }
                 }

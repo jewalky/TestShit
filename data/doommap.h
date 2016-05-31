@@ -88,6 +88,37 @@ public:
         (*this)["x"] = 0;
         (*this)["y"] = 0;
     }
+
+    float getX() { return (*this)["x"].toFloat(); }
+    float getY() { return (*this)["y"].toFloat(); }
+
+    void setX(float v) { (*this)["x"] = v; }
+    void setY(float v) { (*this)["y"] = v; }
+};
+
+class DoomMapSidedef : public DoomMapComponent
+{
+public:
+    DoomMapSidedef() : DoomMapComponent(0) {}
+    DoomMapSidedef(DoomMap* parent) : DoomMapComponent(parent)
+    {
+        (*this)["offsetx"] = 0;
+        (*this)["offsety"] = 0;
+
+        (*this)["texturetop"] = "-";
+        (*this)["texturebottom"] = "-";
+        (*this)["texturemiddle"] = "-";
+
+        (*this)["sector"] = -1;
+    }
+
+    DoomMapSector* getSector()
+    {
+        int sid = (*this)["sector"].toInt();
+        if (sid < 0 || sid >= getParent()->sectors.size())
+            return 0;
+        return &getParent()->sectors[sid];
+    }
 };
 
 class DoomMapLinedef : public DoomMapComponent
@@ -177,31 +208,6 @@ public:
         if (sideback < 0 || sideback >= getParent()->sidedefs.size())
             return 0;
         return &getParent()->sidedefs[sideback];
-    }
-};
-
-class DoomMapSidedef : public DoomMapComponent
-{
-public:
-    DoomMapSidedef() : DoomMapComponent(0) {}
-    DoomMapSidedef(DoomMap* parent) : DoomMapComponent(parent)
-    {
-        (*this)["offsetx"] = 0;
-        (*this)["offsety"] = 0;
-
-        (*this)["texturetop"] = "-";
-        (*this)["texturebottom"] = "-";
-        (*this)["texturemiddle"] = "-";
-
-        (*this)["sector"] = -1;
-    }
-
-    DoomMapSector* getSector()
-    {
-        int sid = (*this)["sector"].toInt();
-        if (sid < 0 || sid >= getParent()->sectors.size())
-            return 0;
-        return &getParent()->sectors[sid];
     }
 };
 
