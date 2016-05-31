@@ -15,9 +15,20 @@ LIBS += -lglu32 -lopengl32
 
 SOURCES += main.cpp\
         mainwindow.cpp \
-    viewarea.cpp
+    data/doommap.cpp \
+    data/wadfile.cpp \
+    openmapdialog.cpp \
+    view2d.cpp \
+    glarray.cpp
 
 HEADERS  += mainwindow.h \
-    viewarea.h
+    data/doommap.h \
+    data/wadfile.h \
+    openmapdialog.h \
+    view2d.h \
+    glarray.h
 
-FORMS    += mainwindow.ui
+FORMS    += mainwindow.ui \
+    openmapdialog.ui
+
+include(../QxPoly2Tri/QxPoly2Tri.pri)

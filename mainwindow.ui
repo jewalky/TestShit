@@ -31,7 +31,7 @@
      <number>1</number>
     </property>
     <item>
-     <widget class="ViewArea" name="widget" native="true"/>
+     <widget class="View2D" name="widget" native="true"/>
     </item>
    </layout>
   </widget>
@@ -52,15 +52,27 @@
    <attribute name="toolBarBreak">
     <bool>false</bool>
    </attribute>
+   <addaction name="actionNew"/>
+   <addaction name="actionOpen"/>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>
+  <action name="actionNew">
+   <property name="text">
+    <string>New</string>
+   </property>
+  </action>
+  <action name="actionOpen">
+   <property name="text">
+    <string>Open</string>
+   </property>
+  </action>
  </widget>
  <layoutdefault spacing="6" margin="11"/>
  <customwidgets>
   <customwidget>
-   <class>ViewArea</class>
+   <class>View2D</class>
    <extends>QWidget</extends>
-   <header>viewarea.h</header>
+   <header>view2d.h</header>
    <container>1</container>
   </customwidget>
  </customwidgets>
