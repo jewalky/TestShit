@@ -22,7 +22,7 @@ void GLArray::draw(int mode, int first, int count)
     glEnableClientState(GL_COLOR_ARRAY);
     glEnableClientState(GL_TEXTURE_COORD_ARRAY);
 
-    glVertexPointer(2, GL_FLOAT, sizeof(GLVertex), ((quint8*)vertices.data())+offsetof(GLVertex, x));
+    glVertexPointer(3, GL_FLOAT, sizeof(GLVertex), ((quint8*)vertices.data())+offsetof(GLVertex, x));
     glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(GLVertex), ((quint8*)vertices.data())+offsetof(GLVertex, r));
     glTexCoordPointer(2, GL_FLOAT, sizeof(GLVertex), ((quint8*)vertices.data())+offsetof(GLVertex, u));
     glDrawArrays(mode, first, count);

@@ -16,6 +16,7 @@ static const QGLFormat& GetView2DFormat()
 View2D::View2D(QWidget* parent) : QGLWidget(GetView2DFormat(), parent)
 {
     setMouseTracking(true);
+    setFocusPolicy(Qt::StrongFocus);
 
     repaintTimer = new QTimer(this);
     connect(repaintTimer, SIGNAL(timeout()), this, SLOT(repaintTimerHandler()));
@@ -195,6 +196,11 @@ void View2D::keyPressEvent(QKeyEvent *e)
         scrollMouseX = scrollX+mouseX;
         scrollMouseY = scrollY+mouseY;
         scrolling = true;
+    }
+    else if (e->key() == Qt::Key_Return ||
+             e->key() == Qt::Key_Enter)
+    {
+        MainWindow::get()->set3DMode(true);
     }
 }
 

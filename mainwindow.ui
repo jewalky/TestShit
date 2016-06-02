@@ -31,7 +31,52 @@
      <number>1</number>
     </property>
     <item>
-     <widget class="View2D" name="widget" native="true"/>
+     <widget class="QStackedWidget" name="modeStack">
+      <widget class="QWidget" name="page2d">
+       <layout class="QVBoxLayout" name="verticalLayout_2">
+        <property name="spacing">
+         <number>0</number>
+        </property>
+        <property name="leftMargin">
+         <number>0</number>
+        </property>
+        <property name="topMargin">
+         <number>0</number>
+        </property>
+        <property name="rightMargin">
+         <number>0</number>
+        </property>
+        <property name="bottomMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="View2D" name="view2d" native="true"/>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="page3d">
+       <layout class="QVBoxLayout" name="verticalLayout_3">
+        <property name="spacing">
+         <number>0</number>
+        </property>
+        <property name="leftMargin">
+         <number>0</number>
+        </property>
+        <property name="topMargin">
+         <number>0</number>
+        </property>
+        <property name="rightMargin">
+         <number>0</number>
+        </property>
+        <property name="bottomMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="View3D" name="view3d" native="true"/>
+        </item>
+       </layout>
+      </widget>
+     </widget>
     </item>
    </layout>
   </widget>
@@ -73,6 +118,12 @@
    <class>View2D</class>
    <extends>QWidget</extends>
    <header>view2d.h</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>View3D</class>
+   <extends>QWidget</extends>
+   <header>view3d.h</header>
    <container>1</container>
   </customwidget>
  </customwidgets>

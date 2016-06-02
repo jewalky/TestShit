@@ -19,14 +19,16 @@ SOURCES += main.cpp\
     data/wadfile.cpp \
     openmapdialog.cpp \
     view2d.cpp \
-    glarray.cpp
+    glarray.cpp \
+    view3d.cpp
 
 HEADERS  += mainwindow.h \
     data/doommap.h \
     data/wadfile.h \
     openmapdialog.h \
     view2d.h \
-    glarray.h
+    glarray.h \
+    view3d.h
 
 FORMS    += mainwindow.ui \
     openmapdialog.ui

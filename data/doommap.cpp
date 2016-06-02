@@ -510,11 +510,10 @@ QPair< QPolygonF, QVector<DoomMapLinedef*> > SectorPolygonTracer::nextPolygon(Do
 
 void DoomMapSector::triangulate()
 {
+    vertices.clear();
     triangles.vertices.clear();
     // first, split the sector into line loops (polygons)
     SectorPolygonTracer spt(this);
-
-    DoomMap* p = getParent();
 
     // go through linedefs in clockwise order and split the sector into separate shapes.
     QVector<QPolygonF> polygons = spt.getPolygons();
@@ -523,9 +522,6 @@ void DoomMapSector::triangulate()
         return;
 
     qsort(polygons.data(), polygons.size(), sizeof(QPolygonF), &DoomMapSectorAreaSort);
-
-    int sectornum = this-p->sectors.data();
-    //qDebug("triangulating sector %d, got %d polygons", sectornum, polygons.size());
 
     for (int i = 0; i < polygons.size(); i++)
     {
@@ -563,20 +559,15 @@ void DoomMapSector::triangulate()
             QPointF prevpt = (k == 0) ? (poly[poly.size()-1]) : poly[k-1];
             QPointF nextpt = poly[(k+1)%poly.size()];
 
-            //QLineF midline(0, 0, 1, 0);
             QLineF vec1 = QLineF(poly[k], prevpt).unitVector();
             QLineF vec2 = QLineF(poly[k], nextpt).unitVector();
             QLineF midline(0, 0, (vec1.dx()+vec2.dx())/2, (vec1.dy()+vec2.dy())/2);
-            //midline.setAngle((QLineF(poly[k], prevpt).angle()+QLineF(poly[k], nextpt).angle())/2);
 
             poly[k].setX(poly[k].x()+midline.dx()*offs);
             poly[k].setY(poly[k].y()+midline.dy()*offs);
         }
         ///////// END GROSS HACK
     }
-
-    //qDebug("%d polygons", polygons.size());
-    //polygons.resize(2);
 
     // for each polygon, check intersections and add holes.
     for (int i = 0; i < polygons.size(); i++)
@@ -603,12 +594,7 @@ void DoomMapSector::triangulate()
                 }
 
                 if (!ishole)
-                {
-                    //qDebug("sector %d, polygon %d, hole %d is not a hole!", sectornum, i, j);
                     continue;
-                }
-
-                //qDebug("sector %d, polygon %d has hole %d!", sectornum, i, j);
 
                 QPolygonF& hole = polygons[j];
                 // add hole
@@ -617,7 +603,6 @@ void DoomMapSector::triangulate()
                 polygons.removeAt(j);
                 j--;
             }
-            //else qDebug("sector %d, polygon %d has no hole %d!", sectornum, i, j);
         }
 
         QxPoly2Tri p2tri;
@@ -642,5 +627,17 @@ void DoomMapSector::triangulate()
 
         polygons.removeAt(i);
         i--;
+    }
+
+    updateBoundingBox();
+    linedefs = spt.getLinedefs();
+    for (int i = 0; i < linedefs.size(); i++)
+    {
+        DoomMapVertex* v1 = linedefs[i]->getV1();
+        DoomMapVertex* v2 = linedefs[i]->getV2();
+        if (!vertices.contains(v1))
+            vertices.append(v1);
+        if (!vertices.contains(v2))
+            vertices.append(v2);
     }
 }

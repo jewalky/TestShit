@@ -9,6 +9,7 @@
 #include <QVariant>
 #include "../glarray.h"
 #include <QPolygonF>
+#include <QLineF>
 
 // map formats
 // 1) Doom
@@ -265,7 +266,57 @@ public:
     // generate sector triangles
     void triangulate();
 
-    GLArray triangles; // this is by default at height 0, to be used with glTranslate if needed for floor/ceiling
+    GLArray triangles; // this is by default at height 0, to be used with glTranslate if needed for floor/ceiling. edit: its better to use separate versions of this array for f/c, for slopes
+    QVector<DoomMapVertex*> vertices; // all vertices of sector.
+    QVector<DoomMapLinedef*> linedefs; // all linedefs of sector.
+    QRectF boundingBox; // bounding box of sector.
+
+    void updateBoundingBox()
+    {
+        float xMin = 65536;
+        float xMax = -65536;
+        float yMin = 65536;
+        float yMax = -65536;
+
+        for (int i = 0; i < vertices.size(); i++)
+        {
+            float x = vertices[i]->x;
+            float y = vertices[i]->y;
+            if (x < xMin) xMin = x;
+            if (x > xMax) xMax = x;
+            if (y < yMin) yMin = y;
+            if (y > yMax) yMax = y;
+        }
+
+        boundingBox = QRectF(xMin, yMin, xMax-xMin, yMax-yMin);
+    }
+
+    bool isAnyWithin(float x, float y, float dst)
+    {
+        //
+        // check bounding box within
+        if (!boundingBox.adjusted(-dst, -dst, +dst, +dst).contains(x, y))
+            return false;
+
+        for (int i = 0; i < vertices.size(); i++)
+        {
+            if (QLineF(vertices[i]->x, vertices[i]->y, x, y).length() <= dst)
+                return true;
+        }
+
+        return false;
+    }
+
+    // todo slope calculations
+    float zatFloor(float x, float y)
+    {
+        return heightfloor;
+    }
+
+    float zatCeiling(float x, float y)
+    {
+        return heightceiling;
+    }
 };
 
 class SectorPolygonTracer

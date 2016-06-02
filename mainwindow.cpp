@@ -21,7 +21,6 @@ MainWindow::MainWindow(QWidget *parent) :
     statusFont.setBold(true);
     QFontMetrics statusFontMetrics(statusFont);
 
-
     statusStatus = new QLabel(this);
     statusStatus->setContentsMargins(4, 2, 4, 2);
     statusStatus->setFont(statusFont);
@@ -79,7 +78,8 @@ void MainWindow::setMap(WADFile* nwad, DoomMap* nmap)
     wad = nwad;
 
     // process stuff
-    ui->widget->initMap();
+    ui->view2d->initMap();
+    ui->view3d->initMap();
 }
 
 void MainWindow::resetScale()
@@ -103,4 +103,9 @@ void MainWindow::resetMouseXY()
 void MainWindow::setMouseXY(float x, float y)
 {
     statusMouseXY->setText(QString::number((int)x)+" , "+QString::number((int)y));
+}
+
+void MainWindow::set3DMode(bool is3d)
+{
+    ui->modeStack->setCurrentWidget(is3d?ui->page3d:ui->page2d);
 }

@@ -31,6 +31,8 @@ public:
     void resetMouseXY();
     void setMouseXY(float x, float y);
 
+    void set3DMode(bool is3d);
+
 private slots:
     void on_actionOpen_triggered();
     void on_actionNew_triggered();
