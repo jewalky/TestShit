@@ -575,6 +575,9 @@ void DoomMapSector::triangulate()
         ///////// END GROSS HACK
     }
 
+    qDebug("%d polygons", polygons.size());
+    //polygons.resize(2);
+
     // for each polygon, check intersections and add holes.
     for (int i = 0; i < polygons.size(); i++)
     {
@@ -588,6 +591,25 @@ void DoomMapSector::triangulate()
             // check intersection
             if (poly.intersected(polygons[j]).size())
             {
+                // make sure this poly doesn't intersect any holes. if it does, it's probably a nested sector and that will be handled separately.
+                bool ishole = true;
+                for (int k = 0; k < holes.size(); k++)
+                {
+                    if (holes[k].intersected(polygons[j]).size())
+                    {
+                        ishole = false;
+                        break;
+                    }
+                }
+
+                if (!ishole)
+                {
+                    qDebug("sector %d, polygon %d, hole %d is not a hole!", sectornum, i, j);
+                    continue;
+                }
+
+                qDebug("sector %d, polygon %d has hole %d!", sectornum, i, j);
+
                 QPolygonF& hole = polygons[j];
                 // add hole
                 holes.append(hole);
@@ -595,6 +617,7 @@ void DoomMapSector::triangulate()
                 polygons.removeAt(j);
                 j--;
             }
+            else qDebug("sector %d, polygon %d has no hole %d!", sectornum, i, j);
         }
 
         QxPoly2Tri p2tri;
@@ -616,5 +639,8 @@ void DoomMapSector::triangulate()
             v.u = v.v = 0; // todo: set texture coordinates based on 64 grid
             triangles.vertices.append(v);
         }
+
+        polygons.removeAt(i);
+        i--;
     }
 }
