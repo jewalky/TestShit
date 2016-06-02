@@ -575,7 +575,7 @@ void DoomMapSector::triangulate()
         ///////// END GROSS HACK
     }
 
-    qDebug("%d polygons", polygons.size());
+    //qDebug("%d polygons", polygons.size());
     //polygons.resize(2);
 
     // for each polygon, check intersections and add holes.
@@ -604,11 +604,11 @@ void DoomMapSector::triangulate()
 
                 if (!ishole)
                 {
-                    qDebug("sector %d, polygon %d, hole %d is not a hole!", sectornum, i, j);
+                    //qDebug("sector %d, polygon %d, hole %d is not a hole!", sectornum, i, j);
                     continue;
                 }
 
-                qDebug("sector %d, polygon %d has hole %d!", sectornum, i, j);
+                //qDebug("sector %d, polygon %d has hole %d!", sectornum, i, j);
 
                 QPolygonF& hole = polygons[j];
                 // add hole
@@ -617,7 +617,7 @@ void DoomMapSector::triangulate()
                 polygons.removeAt(j);
                 j--;
             }
-            else qDebug("sector %d, polygon %d has no hole %d!", sectornum, i, j);
+            //else qDebug("sector %d, polygon %d has no hole %d!", sectornum, i, j);
         }
 
         QxPoly2Tri p2tri;
