@@ -202,8 +202,8 @@ void DoomMap::initClassic(QIODevice* things, QIODevice* linedefs, QIODevice* sid
         qint16 y;
         vertexes_stream >> x >> y;
         DoomMapVertex vx(this);
-        vx["x"] = (float)x;
-        vx["y"] = (float)y;
+        vx.x = (float)x;
+        vx.y = (float)y;
         vertices.append(vx);
     }
 
@@ -228,16 +228,16 @@ void DoomMap::initClassic(QIODevice* things, QIODevice* linedefs, QIODevice* sid
             quint16 sideback;
             linedefs_stream >> v1 >> v2 >> flags >> special >> arg0 >> arg1 >> arg2 >> arg3 >> arg4 >> sidefront >> sideback;
             DoomMapLinedef ln(this);
-            ln["v1"] = (int)v1;
-            ln["v2"] = (int)v2;
-            ln["special"] = (int)special;
-            ln["arg0"] = (int)arg0;
-            ln["arg1"] = (int)arg1;
-            ln["arg2"] = (int)arg2;
-            ln["arg3"] = (int)arg3;
-            ln["arg4"] = (int)arg4;
-            ln["sidefront"] = (sidefront < 0xFFFF) ? (int)sidefront : -1;
-            ln["sideback"] = (sideback < 0xFFFF) ? (int)sideback : -1;
+            ln.v1 = (int)v1;
+            ln.v2 = (int)v2;
+            ln.special = (int)special;
+            ln.arg0 = (int)arg0;
+            ln.arg1 = (int)arg1;
+            ln.arg2 = (int)arg2;
+            ln.arg3 = (int)arg3;
+            ln.arg4 = (int)arg4;
+            ln.sidefront = (sidefront < 0xFFFF) ? (int)sidefront : -1;
+            ln.sideback = (sideback < 0xFFFF) ? (int)sideback : -1;
             // todo parse flags
             this->linedefs.append(ln);
         }
@@ -252,12 +252,12 @@ void DoomMap::initClassic(QIODevice* things, QIODevice* linedefs, QIODevice* sid
             quint16 sideback;
             linedefs_stream >> v1 >> v2 >> flags >> special >> tag >> sidefront >> sideback;
             DoomMapLinedef ln(this);
-            ln["v1"] = (int)v1;
-            ln["v2"] = (int)v2;
-            ln["special"] = (int)special;
-            ln["id"] = (int)tag;
-            ln["sidefront"] = (sidefront < 0xFFFF) ? (int)sidefront : -1;
-            ln["sideback"] = (sideback < 0xFFFF) ? (int)sideback : -1;
+            ln.v1 = (int)v1;
+            ln.v2 = (int)v2;
+            ln.special = (int)special;
+            ln.id = (int)tag;
+            ln.sidefront = (sidefront < 0xFFFF) ? (int)sidefront : -1;
+            ln.sideback = (sideback < 0xFFFF) ? (int)sideback : -1;
             // todo parse flags
             this->linedefs.append(ln);
         }
@@ -281,12 +281,12 @@ void DoomMap::initClassic(QIODevice* things, QIODevice* linedefs, QIODevice* sid
         sidedefs_stream.readRawData(rtexturemiddle, 8);
         sidedefs_stream >> sector;
         DoomMapSidedef sd(this);
-        sd["offsetx"] = (float)offsetx;
-        sd["offsety"] = (float)offsety;
-        sd["texturetop"] = QString::fromUtf8(rtexturetop);
-        sd["texturebottom"] = QString::fromUtf8(rtexturebottom);
-        sd["texturemiddle"] = QString::fromUtf8(rtexturemiddle);
-        sd["sector"] = (int)sector;
+        sd.offsetx = (float)offsetx;
+        sd.offsety = (float)offsety;
+        sd.texturetop = QString::fromUtf8(rtexturetop);
+        sd.texturebottom = QString::fromUtf8(rtexturebottom);
+        sd.texturemiddle = QString::fromUtf8(rtexturemiddle);
+        sd.sector = (int)sector;
         this->sidedefs.append(sd);
     }
 
@@ -308,13 +308,13 @@ void DoomMap::initClassic(QIODevice* things, QIODevice* linedefs, QIODevice* sid
         sectors_stream.readRawData(textureceiling, 8);
         sectors_stream >> lightlevel >> special >> tag;
         DoomMapSector sec(this);
-        sec["heightfloor"] = (float)heightfloor;
-        sec["heightceiling"] = (float)heightceiling;
-        sec["texturefloor"] = QString::fromUtf8(texturefloor);
-        sec["textureceiling"] = QString::fromUtf8(textureceiling);
-        sec["lightlevel"] = (int)lightlevel;
-        sec["special"] = (int)special;
-        sec["tag"] = (int)tag;
+        sec.heightfloor = (float)heightfloor;
+        sec.heightceiling = (float)heightceiling;
+        sec.texturefloor = QString::fromUtf8(texturefloor);
+        sec.textureceiling = QString::fromUtf8(textureceiling);
+        sec.lightlevel = (int)lightlevel;
+        sec.special = (int)special;
+        sec.id = (int)tag;
         this->sectors.append(sec);
     }
 }
@@ -372,7 +372,7 @@ QPair< QPolygonF, QVector<DoomMapLinedef*> > SectorPolygonTracer::nextPolygon(Do
         QPolygonF poly;
         QVector<DoomMapLinedef*> polylines;
 
-        poly.append(QPointF(vs->getX(), vs->getY()));
+        poly.append(QPointF(vs->x, vs->y));
         polylines.append(line);
 
         DoomMapLinedef* prevld = line;
@@ -391,13 +391,13 @@ QPair< QPolygonF, QVector<DoomMapLinedef*> > SectorPolygonTracer::nextPolygon(Do
                 if (vp)
                 {
                     if (vp == v1 ||
-                        (vp->getX() == v1->getX() &&
-                         vp->getY() == v1->getY()))
+                        (vp->x == v1->x &&
+                         vp->y == v1->y))
                     {
                         // check if this is the first line.
                         if ((vs == v1 ||
-                            (vs->getX() == v1->getX() &&
-                             vs->getY() == v1->getY())))
+                            (vs->x == v1->x &&
+                             vs->y == v1->y)))
                         {
                             //return QPair< QPolygonF, QVector<DoomMapLinedef*> > (QPolygonF(), QVector<DoomMapLinedef*>());
                             // successful trace, add polygon
@@ -424,8 +424,8 @@ QPair< QPolygonF, QVector<DoomMapLinedef*> > SectorPolygonTracer::nextPolygon(Do
 
                             DoomMapVertex* ov1 = linedefs[j]->getV1(sector);
                             if (vp == ov1 ||
-                                (vp->getX() == ov1->getX() &&
-                                 vp->getY() == ov1->getY()))
+                                (vp->x == ov1->x &&
+                                 vp->y == ov1->y))
                             {
                                 outcomes.append(linedefs[j]);
                             }
@@ -434,7 +434,7 @@ QPair< QPolygonF, QVector<DoomMapLinedef*> > SectorPolygonTracer::nextPolygon(Do
                         if (outcomes.size() == 1)
                         {
                             vp = v2;
-                            poly.append(QPointF(v1->getX(), v1->getY()));
+                            poly.append(QPointF(v1->x, v1->y));
                             polylines.append(linedef);
                             prevld = linedef;
                             if (log) qDebug("sector %d, line = %d", numsector, linedef-p->linedefs.data());
@@ -453,9 +453,9 @@ QPair< QPolygonF, QVector<DoomMapLinedef*> > SectorPolygonTracer::nextPolygon(Do
                             {
                                 DoomMapLinedef* cLinedef = outcomes[j];
                                 DoomMapVertex* cV2 = cLinedef->getV2(sector);
-                                //float cAngle = QLineF(QPointF(pv1->getX(), pv1->getY()), QPointF(pv2->getX(), pv2->getY())).angleTo(QLineF(QPointF(v1->getX(), v1->getY()), QPointF(cV2->getX(), cV2->getY())));
-                                //float cAngle = QLineF(QPointF(v1->getX(), v1->getY()), QPointF(pv1->getX(), pv1->getY())).angleTo(QLineF(QPointF(v1->getX(), v1->getY()), QPointF(cV2->getX(), cV2->getY())));
-                                float cAngle = QLineF(v1->getX(), v1->getY(), cV2->getX(), cV2->getY()).angleTo(QLineF(v1->getX(), v1->getY(), pv1->getX(), pv1->getY()));
+                                //float cAngle = QLineF(QPointF(pv1->x, pv1->y), QPointF(pv2->x, pv2->y)).angleTo(QLineF(QPointF(v1->x, v1->y), QPointF(cV2->x, cV2->y)));
+                                //float cAngle = QLineF(QPointF(v1->x, v1->y), QPointF(pv1->x, pv1->y)).angleTo(QLineF(QPointF(v1->x, v1->y), QPointF(cV2->x, cV2->y)));
+                                float cAngle = QLineF(v1->x, v1->y, cV2->x, cV2->y).angleTo(QLineF(v1->x, v1->y, pv1->x, pv1->y));
                                 if (log) qDebug("sector %d, possible line = %d, angle %f", numsector, cLinedef-p->linedefs.data(), cAngle);
                                 if ((k == 0 && cAngle < refAngle) ||
                                     (k == 1 && cAngle > refAngle))
@@ -466,7 +466,7 @@ QPair< QPolygonF, QVector<DoomMapLinedef*> > SectorPolygonTracer::nextPolygon(Do
                                 }
                             }
 
-                            poly.append(QPointF(v1->getX(), v1->getY()));
+                            poly.append(QPointF(v1->x, v1->y));
                             polylines.append(refLinedef);
                             prevld = refLinedef;
                             if (log) qDebug("sector %d, line = %d", numsector, refLinedef-p->linedefs.data());
@@ -628,11 +628,11 @@ void DoomMapSector::triangulate()
         // make GL array now
         QVector<int> tri_indices = p2tri.indices();
         QVector<QPointF> tri_points = p2tri.points();
-        for (int i = 0; i < tri_indices.size(); i++)
+        for (int j = 0; j < tri_indices.size(); j++)
         {
             GLVertex v;
-            v.x = tri_points[tri_indices[i]].x();
-            v.y = -tri_points[tri_indices[i]].y();
+            v.x = tri_points[tri_indices[j]].x();
+            v.y = -tri_points[tri_indices[j]].y();
             v.z = 0;
             v.r = v.g = v.b = 255;
             v.a = 64;

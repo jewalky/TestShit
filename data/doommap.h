@@ -65,139 +65,167 @@ struct DetectedDoomMap
 };
 
 // https://github.com/rheit/zdoom/blob/master/specs/udmf.txt
-class DoomMapComponent : public QMap<QString, QVariant>
+class DoomMapComponent
 {
 public:
     DoomMapComponent(DoomMap* parent)
     {
         this->parent = parent;
-        (*this)["comment"] = "";
+        properties["comment"] = "";
     }
 
     DoomMap* getParent() { return parent; }
+    QMap<QString, QVariant>& getProperties() { return properties; }
 
 private:
     DoomMap* parent;
+    QMap<QString, QVariant> properties;
 };
 
 class DoomMapVertex : public DoomMapComponent
 {
 public:
+    float x;
+    float y;
+
     DoomMapVertex() : DoomMapComponent(0) {}
     DoomMapVertex(DoomMap* parent) : DoomMapComponent(parent)
     {
-        (*this)["x"] = 0;
-        (*this)["y"] = 0;
+        x = 0;
+        y = 0;
     }
-
-    float getX() { return (*this)["x"].toFloat(); }
-    float getY() { return (*this)["y"].toFloat(); }
-
-    void setX(float v) { (*this)["x"] = v; }
-    void setY(float v) { (*this)["y"] = v; }
 };
 
 class DoomMapSidedef : public DoomMapComponent
 {
 public:
+    int offsetx;
+    int offsety;
+
+    QString texturetop;
+    QString texturebottom;
+    QString texturemiddle;
+
+    int sector;
+
     DoomMapSidedef() : DoomMapComponent(0) {}
     DoomMapSidedef(DoomMap* parent) : DoomMapComponent(parent)
     {
-        (*this)["offsetx"] = 0;
-        (*this)["offsety"] = 0;
-
-        (*this)["texturetop"] = "-";
-        (*this)["texturebottom"] = "-";
-        (*this)["texturemiddle"] = "-";
-
-        (*this)["sector"] = -1;
+        offsetx = offsety = 0;
+        texturetop = texturebottom = texturemiddle = "-";
+        sector = -1;
     }
 
     DoomMapSector* getSector()
     {
-        int sid = (*this)["sector"].toInt();
-        if (sid < 0 || sid >= getParent()->sectors.size())
+        if (sector < 0 || sector >= getParent()->sectors.size())
             return 0;
-        return &getParent()->sectors[sid];
+        return &getParent()->sectors[sector];
     }
 };
 
 class DoomMapLinedef : public DoomMapComponent
 {
 public:
+    int id;
+    int v1;
+    int v2;
+
+    bool blocking;
+    bool blockmonsters;
+    bool twosided;
+    bool dontpegtop;
+    bool dontpegbottom;
+    bool secret;
+    bool blocksound;
+    bool dontdraw;
+    bool mapped;
+
+    bool passuse;
+
+    bool translucent;
+    bool jumpover;
+    bool blockfloaters;
+
+    bool playercross;
+    bool playeruse;
+    bool monstercross;
+    bool monsteruse;
+    bool impact;
+    bool playerpush;
+    bool monsterpush;
+    bool missilecross;
+    bool repeatspecial;
+
+    int special;
+    int arg0;
+    int arg1;
+    int arg2;
+    int arg3;
+    int arg4;
+
+    int sidefront;
+    int sideback;
+
     DoomMapLinedef() : DoomMapComponent(0) {}
     DoomMapLinedef(DoomMap* parent) : DoomMapComponent(parent)
     {
-        (*this)["id"] = 0;
-        (*this)["v1"] = -1;
-        (*this)["v2"] = -1;
+        id = 0;
+        v1 = -1;
+        v2 = -1;
 
-        //
-        (*this)["blocking"] = false;
-        (*this)["blockmonsters "] = false;
-        (*this)["twosided"] = false;
-        (*this)["dontpegtop"] = false;
-        (*this)["dontpegbottom"] = false;
-        (*this)["secret"] = false;
-        (*this)["blocksound"] = false;
-        (*this)["dontdraw"] = false;
-        (*this)["mapped"] = false;
+        blocking = false;
+        blockmonsters = false;
+        twosided = false;
+        dontpegtop = false;
+        dontpegbottom = false;
+        secret = false;
+        blocksound = false;
+        dontdraw = false;
+        mapped = false;
 
-        //
-        (*this)["passuse"] = false;
+        passuse = false;
 
-        //
-        (*this)["translucent"] = false;
-        (*this)["jumpover"] = false;
-        (*this)["blockfloaters"] = false;
+        translucent = false;
+        jumpover = false;
+        blockfloaters = false;
 
-        //
-        (*this)["playercross"] = false;
-        (*this)["playeruse"] = false;
-        (*this)["monstercross"] = false;
-        (*this)["monsteruse"] = false;
-        (*this)["impact"] = false;
-        (*this)["playerpush"] = false;
-        (*this)["monsterpush"] = false;
-        (*this)["missilecross"] = false;
-        (*this)["repeatspecial"] = false;
+        playercross = false;
+        playeruse = false;
+        monstercross = false;
+        monsteruse = false;
+        impact = false;
+        playerpush = false;
+        monsterpush = false;
+        missilecross = false;
+        repeatspecial = false;
 
-        //
-        (*this)["special"] = 0;
-        (*this)["arg0"] = 0;
-        (*this)["arg1"] = 0;
-        (*this)["arg2"] = 0;
-        (*this)["arg3"] = 0;
-        (*this)["arg4"] = 0;
+        special = 0;
+        arg0 = arg1 = arg2 = arg3 = arg4 = 0;
 
-        //
-        (*this)["sidefront"] = -1;
-        (*this)["sideback"] = -1;
+        sidefront = sideback = -1;
     }
 
     DoomMapVertex* getV1(DoomMapSector* sector = 0)
     {
         if (sector && getFront() && getFront()->getSector() != sector)
             return getV2();
-        int v1id = (*this)["v1"].toInt();
-        if (v1id < 0 || v1id >= getParent()->vertices.size())
+        if (v1 < 0 || v1 >= getParent()->vertices.size())
             return 0;
-        return &getParent()->vertices[v1id];
+        return &getParent()->vertices[v1];
     }
 
     DoomMapVertex* getV2(DoomMapSector* sector = 0)
     {
         if (sector && getFront() && getFront()->getSector() != sector)
             return getV1();
-        int v2id = (*this)["v2"].toInt();
-        if (v2id < 0 || v2id >= getParent()->vertices.size())
+        if (v2 < 0 || v2 >= getParent()->vertices.size())
             return 0;
-        return &getParent()->vertices[v2id];
+        return &getParent()->vertices[v2];
     }
 
     DoomMapSidedef* getFront()
     {
-        int sidefront = (*this)["sidefront"].toInt();
         if (sidefront < 0 || sidefront >= getParent()->sidedefs.size())
             return 0;
         return &getParent()->sidedefs[sidefront];
@@ -205,7 +233,6 @@ public:
 
     DoomMapSidedef* getBack()
     {
-        int sideback = (*this)["sideback"].toInt();
         if (sideback < 0 || sideback >= getParent()->sidedefs.size())
             return 0;
         return &getParent()->sidedefs[sideback];
@@ -215,19 +242,24 @@ public:
 class DoomMapSector : public DoomMapComponent
 {
 public:
+    int heightfloor;
+    int heightceiling;
+
+    QString texturefloor;
+    QString textureceiling;
+
+    int lightlevel;
+
+    int special;
+    int id;
+
     DoomMapSector() : DoomMapComponent(0) {}
     DoomMapSector(DoomMap* parent) : DoomMapComponent(parent)
     {
-        (*this)["heightfloor"] = 0;
-        (*this)["heightceiling"] = 0;
-
-        (*this)["texturefloor"] = "-";
-        (*this)["textureceiling"] = "-";
-
-        (*this)["lightlevel"] = 160;
-
-        (*this)["special"] = 0;
-        (*this)["id"] = 0;
+        heightfloor = heightceiling = 0;
+        texturefloor = textureceiling = "-";
+        lightlevel = 160;
+        special = id = 0;
     }
 
     // generate sector triangles

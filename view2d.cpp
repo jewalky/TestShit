@@ -117,13 +117,13 @@ void View2D::initMap()
             quint8 c = !!linedef.getBack() ? 128 : 255;
 
             GLVertex v1;
-            v1.x = (*linedef.getV1())["x"].toFloat();
-            v1.y = -(*linedef.getV1())["y"].toFloat();
+            v1.x = linedef.getV1()->x;
+            v1.y = -linedef.getV1()->y;
             v1.r = v1.g = v1.b = c;
             v1.a = 255;
             GLVertex v2;
-            v2.x = (*linedef.getV2())["x"].toFloat();
-            v2.y = -(*linedef.getV2())["y"].toFloat();
+            v2.x = linedef.getV2()->x;
+            v2.y = -linedef.getV2()->y;
             v2.r = v2.g = v2.b = c;
             v2.a = 255;
             linesArray.vertices.append(v1);
