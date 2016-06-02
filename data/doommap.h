@@ -8,6 +8,7 @@
 #include <QMap>
 #include <QVariant>
 #include "../glarray.h"
+#include <QPolygonF>
 
 // map formats
 // 1) Doom
@@ -233,6 +234,83 @@ public:
     void triangulate();
 
     GLArray triangles; // this is by default at height 0, to be used with glTranslate if needed for floor/ceiling
+};
+
+class SectorPolygonTracer
+{
+public:
+    SectorPolygonTracer(DoomMapSector* sector)
+    {
+        this->sector = sector;
+        linedefs.clear();
+
+        DoomMap* p = sector->getParent();
+        for (int i = 0; i < p->linedefs.size(); i++)
+        {
+            DoomMapSidedef* front = p->linedefs[i].getFront();
+            DoomMapSidedef* back = p->linedefs[i].getBack();
+
+            bool hfront = (front && front->getSector() == sector);
+            bool hback = (back && back->getSector() == sector);
+
+            if (hfront && hback)
+                continue;
+
+            if (hfront || hback)
+                linedefs.append(&p->linedefs[i]);
+        }
+    }
+
+    // returns linedefs that refer to this sector with one of their sidedefs
+    QVector<DoomMapLinedef*> getLinedefs()
+    {
+        return linedefs;
+    }
+
+    // returns a list of separate line loops in this sector.
+    QVector<QPolygonF> getPolygons()
+    {
+        QVector<QPolygonF> polygons;
+        while (true)
+        {
+            // find first unchecked line.
+            DoomMapLinedef* nextld = 0;
+            for (int i = 0; i < linedefs.size(); i++)
+            {
+                if (checkedlinedefs.contains(linedefs[i]))
+                    continue;
+                nextld = linedefs[i];
+                break;
+            }
+
+            if (!nextld)
+                break;
+
+            QPair< QPolygonF, QVector<DoomMapLinedef*> > poly = nextPolygon(nextld);
+            if (poly.first.size() <= 0)
+                break;
+            polygons.append(poly.first);
+            for (int i = 0; i < poly.second.size(); i++)
+                checkedlinedefs.append(poly.second[i]);
+        }
+
+        return polygons;
+    }
+
+private:
+
+    DoomMapSector* sector;
+
+    // a list of linedefs in the reference sector.
+    QVector<DoomMapLinedef*> linedefs;
+
+    // a list of linedefs that have already been traversed.
+    QVector<DoomMapLinedef*> checkedlinedefs;
+
+    // returns a pair of polygon and lines that this polygon consists of.
+    // if no polygon found, returns two empty objects.
+    // currentcheckedlinedefs is used to prevent infinite recursion.
+    QPair< QPolygonF, QVector<DoomMapLinedef*> > nextPolygon(DoomMapLinedef* line);
 };
 
 #endif // DOOMMAP_H
