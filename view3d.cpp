@@ -63,6 +63,12 @@ void View3D::paintGL()
     if (!cmap)
         return;
 
+    float rdist = 1024;
+
+    glEnable(GL_FOG);
+    glFogi(GL_FOG_MODE, GL_LINEAR);
+    glFogf(GL_FOG_START, rdist-64);
+    glFogf(GL_FOG_END, rdist);
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
     glEnable(GL_DEPTH_TEST);
@@ -70,6 +76,10 @@ void View3D::paintGL()
     for (int i = 0; i < cmap->sectors.size(); i++)
     {
         DoomMapSector* sector = &cmap->sectors[i];
+        // dont render if too far
+        if (!sector->isAnyWithin(posX, -posY, rdist+64))
+            continue;
+
         // draw sector's floor and ceiling first
         GLArray tri_floor = sector->triangles, tri_ceiling = sector->triangles;
         for (int j = 0; j < sector->triangles.vertices.size(); j++)
@@ -178,6 +188,7 @@ void View3D::paintGL()
         //lines.draw(GL_LINES);
     }
     glDisable(GL_DEPTH_TEST);
+    glDisable(GL_FOG);
 }
 
 
