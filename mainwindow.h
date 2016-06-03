@@ -6,6 +6,7 @@
 #include "data/doommap.h"
 
 #include <QLabel>
+#include <QGLWidget>
 
 namespace Ui {
 class MainWindow;
@@ -21,8 +22,7 @@ public:
 
     static MainWindow* get() { return instance; }
 
-    void setMap(WADFile* nwad, DoomMap* nmap);
-    WADFile* getMapWAD() { return wad; }
+    void setMap(DoomMap* nmap);
     DoomMap* getMap() { return map; }
 
     void resetScale();
@@ -33,6 +33,11 @@ public:
 
     void set3DMode(bool is3d);
 
+    QGLWidget* getSharedGLWidget();
+
+    float getMouseX();
+    float getMouseY();
+
 private slots:
     void on_actionOpen_triggered();
     void on_actionNew_triggered();
@@ -41,7 +46,6 @@ private:
     Ui::MainWindow *ui;
     static MainWindow* instance;
 
-    WADFile* wad;
     DoomMap* map;
 
     // status bar

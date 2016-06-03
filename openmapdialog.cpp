@@ -6,6 +6,7 @@
 #include <QMessageBox>
 #include <QMetaEnum>
 #include "mainwindow.h"
+#include "data/texman.h"
 
 OpenMapDialog::OpenMapDialog(QWidget *parent) :
     QDialog(parent),
@@ -19,8 +20,9 @@ OpenMapDialog::~OpenMapDialog()
     delete ui;
 }
 
-void OpenMapDialog::fromWAD(QString filename)
+void OpenMapDialog::fromWAD(QString nfilename)
 {
+    filename = nfilename;
     QFileInfo info(filename);
     ui->label_wadName->setText(info.fileName());
 
@@ -70,7 +72,16 @@ void OpenMapDialog::on_buttonBox_accepted()
 
     QString mapname = item->data(Qt::UserRole).toString();
     DoomMap* map = new DoomMap(wad, mapname);
-    MainWindow::get()->setMap(wad, map);
+    MainWindow::get()->setMap(map);
+
+    // init texture manager for this map.
+    QVector<TexResource> resources;
+    TexResource ownwad;
+    ownwad.type = TexResource::WAD;
+    ownwad.name = filename;
+    resources.append(ownwad);
+    Tex_SetWADList(resources);
+    delete wad;
 }
 
 void OpenMapDialog::on_buttonBox_rejected()

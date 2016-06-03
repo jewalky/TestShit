@@ -10,11 +10,10 @@ MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
     ui(new Ui::MainWindow)
 {
-    ui->setupUi(this);
     instance = this;
+    ui->setupUi(this);
 
     map = 0;
-    wad = 0;
 
     //
     QFont statusFont = font();
@@ -45,9 +44,7 @@ MainWindow::MainWindow(QWidget *parent) :
 MainWindow::~MainWindow()
 {
     if (map) delete map;
-    if (wad) delete wad;
     map = 0;
-    wad = 0;
     delete ui;
     ui = 0;
     instance = 0;
@@ -68,14 +65,11 @@ void MainWindow::on_actionOpen_triggered()
     mapsdlg->fromWAD(fileName);
 }
 
-void MainWindow::setMap(WADFile* nwad, DoomMap* nmap)
+void MainWindow::setMap(DoomMap* nmap)
 {
     if (map != nmap && map)
         delete map;
     map = nmap;
-    if (wad != nwad && wad)
-        delete wad;
-    wad = nwad;
 
     // process stuff
     ui->view2d->initMap();
@@ -108,4 +102,19 @@ void MainWindow::setMouseXY(float x, float y)
 void MainWindow::set3DMode(bool is3d)
 {
     ui->modeStack->setCurrentWidget(is3d?ui->page3d:ui->page2d);
+}
+
+QGLWidget* MainWindow::getSharedGLWidget()
+{
+    return (QGLWidget*)ui->view2d;
+}
+
+float MainWindow::getMouseX()
+{
+    return ui->view2d->getMouseX();
+}
+
+float MainWindow::getMouseY()
+{
+    return ui->view2d->getMouseY();
 }

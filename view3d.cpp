@@ -4,6 +4,7 @@
 #include "glarray.h"
 #include <cmath> // M_PI, tan()
 #include <QApplication>
+#include "data/texman.h"
 
 static const QGLFormat& GetView3DFormat()
 {
@@ -15,7 +16,7 @@ static const QGLFormat& GetView3DFormat()
     return fmt;
 }
 
-View3D::View3D(QWidget* parent) : QGLWidget(GetView3DFormat(), parent)
+View3D::View3D(QWidget* parent) : QGLWidget(GetView3DFormat(), parent, MainWindow::get()->getSharedGLWidget())
 {
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
@@ -28,7 +29,7 @@ View3D::View3D(QWidget* parent) : QGLWidget(GetView3DFormat(), parent)
     wasVisible = false;
     mouseXLast = mouseYLast = -1;
 
-    mouseIgnore = false;
+    running = false;
 }
 
 void View3D::initializeGL()
@@ -37,6 +38,41 @@ void View3D::initializeGL()
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+}
+
+// ewwwwwwwwwwwwwwwwwwwwwwwww this function is so ugly
+static void View3D_Helper_SetTextureOffsets(GLVertex& vv1, GLVertex& vv2, GLVertex& vv3, GLVertex& vv4, DoomMapSector* sector, DoomMapSector* other, DoomMapLinedef* linedef, DoomMapSidedef* sidedef, QLineF& line, TexTexture* tex, bool top)
+{
+    float xbase = sidedef->offsetx;
+    float ybase = sidedef->offsety;
+    // lower unpegged means the texture should have origin at it's bottom, not top.
+    if (linedef->dontpegbottom && !top)
+    {
+        int highestfloor = sector->heightfloor;
+        if (other) highestfloor = other->heightfloor;
+        int ptd = (sector->heightceiling-highestfloor) % tex->getHeight(); // 272 % 128
+        if (!other) ptd = -ptd;
+        ybase += ptd;
+    }
+    else if (!linedef->dontpegtop && top)
+    {
+        int ptd = tex->getHeight() - (sector->heightceiling - other->heightceiling);
+        ybase += ptd;
+    }
+    xbase /= tex->getWidth();
+    ybase /= tex->getHeight();
+    float xlen = line.length() / tex->getWidth();
+    float ylen1 = (vv1.z-vv4.z) / tex->getHeight();
+    float ylen2 = (vv2.z-vv3.z) / tex->getHeight();
+
+    vv1.u = xbase;
+    vv1.v = ybase;
+    vv2.u = xbase+xlen;
+    vv2.v = ybase;
+    vv3.u = xbase+xlen;
+    vv3.v = ybase+ylen2;
+    vv4.u = xbase;
+    vv4.v = ybase+ylen1;
 }
 
 void View3D::paintGL()
@@ -73,12 +109,18 @@ void View3D::paintGL()
     glCullFace(GL_BACK);
     glEnable(GL_DEPTH_TEST);
     // hueeeeeeeeeeeeeeeeeeeeeeeeee
+    glDisable(GL_BLEND);
     for (int i = 0; i < cmap->sectors.size(); i++)
     {
         DoomMapSector* sector = &cmap->sectors[i];
         // dont render if too far
         if (!sector->isAnyWithin(posX, -posY, rdist+64))
             continue;
+
+        // find ceiling texture
+        // this NEVER returns null. at most - embedded resource that says "BROKEN TEXTURE"
+        TexTexture* flatceiling = Tex_GetTexture(sector->textureceiling, TexTexture::Flat, true);
+        TexTexture* flatfloor = Tex_GetTexture(sector->texturefloor, TexTexture::Flat, true);
 
         // draw sector's floor and ceiling first
         GLArray tri_floor = sector->triangles, tri_ceiling = sector->triangles;
@@ -90,21 +132,32 @@ void View3D::paintGL()
             fv.z = sector->zatFloor(fv.x, fv.y);
             cv.z = sector->zatCeiling(cv.x, cv.y);
 
-            fv.r = fv.g = fv.b = (sector->texturefloor=="F_SKY1")?0:64;
+            fv.r = fv.g = fv.b = sector->lightlevel;
             fv.a = 255;
 
-            cv.r = cv.g = cv.b = (sector->textureceiling=="F_SKY1")?0:64;
+            cv.r = cv.g = cv.b = sector->lightlevel;
             cv.a = 255;
+
+            // set floor u/v
+            fv.u = fv.x / flatfloor->getWidth();
+            fv.v = fv.y / flatfloor->getHeight();
+
+            // set ceiling u/v
+            cv.u = cv.x / flatceiling->getWidth();
+            cv.v = cv.y / flatceiling->getHeight();
         }
 
         // draw lines around the sector.
-        GLArray quads;
         for (int j = 0; j < sector->linedefs.size(); j++)
         {
             DoomMapLinedef* linedef = sector->linedefs[j];
 
             DoomMapVertex* v1 = linedef->getV1(sector);
             DoomMapVertex* v2 = linedef->getV2(sector);
+
+            DoomMapSidedef* sidedef = linedef->getSidedef(sector);
+            if (!sidedef)
+                continue; // wtf?
 
             // dont draw 2sided yet
             GLVertex vv1, vv2, vv3, vv4;
@@ -131,8 +184,11 @@ void View3D::paintGL()
             float lite = whl
                 + fabs(atan(double(line.dx()) / line.dy()) / 1.57079)
                 * (wvl - whl);
+            lite += sector->lightlevel;
+            if (lite > 255) lite = 255;
+            if (lite < 0) lite = 0;
 
-            quint8 c = 128 + lite;
+            quint8 c = lite;
 
             vv1.r=vv1.g=vv1.b=c;
             vv2.r=vv2.g=vv2.b=c;
@@ -143,10 +199,20 @@ void View3D::paintGL()
             // single-sided line:
             if (!linedef->getBack())
             {
+                TexTexture* tex = Tex_GetTexture(sidedef->texturemiddle, TexTexture::Texture, true);
+
+                View3D_Helper_SetTextureOffsets(vv1, vv2, vv3, vv4, sector, 0, linedef, sidedef, line, tex, false);
+
+                GLArray quads;
                 quads.vertices.append(vv1);
                 quads.vertices.append(vv2);
                 quads.vertices.append(vv3);
                 quads.vertices.append(vv4);
+
+                glEnable(GL_TEXTURE_2D);
+                glBindTexture(GL_TEXTURE_2D, tex->getTexture());
+                quads.draw(GL_QUADS);
+                glDisable(GL_TEXTURE_2D);
             }
             else
             {
@@ -159,16 +225,34 @@ void View3D::paintGL()
                 ov2.z = std::min(sector->zatCeiling(ov2.x, -ov2.y), other->zatCeiling(ov2.x, -ov2.y));
                 ov3.z = std::max(sector->zatFloor(ov3.x, -ov3.y), other->zatFloor(ov3.x, -ov3.y));
                 ov4.z = std::max(sector->zatFloor(ov4.x, -ov4.y), other->zatFloor(ov4.x, -ov4.y));
+
+                // evaluate texture offsets
+                TexTexture* textop = Tex_GetTexture(sidedef->texturetop, TexTexture::Texture, true);
+                TexTexture* texbottom = Tex_GetTexture(sidedef->texturebottom, TexTexture::Texture, true);
+
+                View3D_Helper_SetTextureOffsets(vv1, vv2, ov2, ov1, sector, other, linedef, sidedef, line, textop, true);
+                View3D_Helper_SetTextureOffsets(ov4, ov3, vv3, vv4, sector, other, linedef, sidedef, line, texbottom, false);
+
+                GLArray quads;
+
                 // top texture
+                glEnable(GL_TEXTURE_2D);
+                glBindTexture(GL_TEXTURE_2D, textop->getTexture());
                 quads.vertices.append(vv1);
                 quads.vertices.append(vv2);
                 quads.vertices.append(ov2);
                 quads.vertices.append(ov1);
+                quads.draw(GL_QUADS);
+                quads.vertices.clear();
+
                 // bottom texture
+                glBindTexture(GL_TEXTURE_2D, texbottom->getTexture());
                 quads.vertices.append(ov4);
                 quads.vertices.append(ov3);
                 quads.vertices.append(vv3);
                 quads.vertices.append(vv4);
+                quads.draw(GL_QUADS);
+                glDisable(GL_TEXTURE_2D);
             }
         }
 
@@ -177,16 +261,19 @@ void View3D::paintGL()
         glEnable(GL_POLYGON_OFFSET_FILL);
         glPolygonOffset(1, 0.5);
 
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, flatfloor->getTexture());
         glFrontFace(GL_CCW);
         tri_floor.draw(GL_TRIANGLES);
         glFrontFace(GL_CW);
+        glBindTexture(GL_TEXTURE_2D, flatceiling->getTexture());
         tri_ceiling.draw(GL_TRIANGLES);
-
-        quads.draw(GL_QUADS);
+        glDisable(GL_TEXTURE_2D);
 
         glDisable(GL_POLYGON_OFFSET_FILL);
         //lines.draw(GL_LINES);
     }
+    glEnable(GL_BLEND);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_FOG);
 }
@@ -209,11 +296,13 @@ void View3D::repaintTimerHandler()
         //grabMouse();
         //grabKeyboard();
         becameVisible();
+        wasVisible = true;
     }
     else if (!isVisible() && wasVisible)
     {
         //releaseMouse();
         //releaseKeyboard();
+        wasVisible = false;
     }
 
     if (!isVisible())
@@ -228,7 +317,7 @@ void View3D::repaintTimerHandler()
     if (moveRight) dx += 1;
 
     float movemul = 6;
-    if (QApplication::keyboardModifiers() & Qt::ShiftModifier)
+    if (running)
         movemul *= 3;
 
     QLineF vertvec(0, 0, 1, 0);
@@ -278,8 +367,6 @@ void View3D::mouseMoveEvent(QMouseEvent* e)
             angZ += 360;
         while (angZ > 360)
             angZ -= 360;
-
-        //qDebug("angX = %f", angX);
     }
 
     mouseXLast = e->x();
@@ -308,6 +395,9 @@ void View3D::wheelEvent(QWheelEvent* e)
 
 void View3D::keyPressEvent(QKeyEvent *e)
 {
+    if (e->isAutoRepeat())
+        return;
+
     if (e->key() == Qt::Key_Return ||
         e->key() == Qt::Key_Enter)
     {
@@ -329,10 +419,18 @@ void View3D::keyPressEvent(QKeyEvent *e)
     {
         moveRight = true;
     }
+    else if (e->key() == Qt::Key_Shift)
+    {
+        running = true;
+        //qDebug("running on");
+    }
 }
 
 void View3D::keyReleaseEvent(QKeyEvent *e)
 {
+    if (e->isAutoRepeat())
+        return;
+
     if (e->key() == Qt::Key_W)
     {
         moveForward = false;
@@ -349,12 +447,24 @@ void View3D::keyReleaseEvent(QKeyEvent *e)
     {
         moveRight = false;
     }
+    else if ((e->key() == Qt::Key_Shift) || (e->modifiers() & Qt::ShiftModifier))
+    {
+        running = false;
+        //qDebug("running off");
+    }
 }
 
 void View3D::becameVisible()
 {
     // todo reset mouse
     mouseXLast = mouseYLast = -1;
+    running = false;
+
+    // set x/y position to 2d mode position, and z position to 0
+    posX = MainWindow::get()->getMouseX();
+    posY = -MainWindow::get()->getMouseY();
+    posZ = 0;
+    //qDebug("posX = %f, posY = %f; posZ = %f", posX, posY, posZ);
 }
 
 void View3D::setPerspective(float fov)

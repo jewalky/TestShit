@@ -53,12 +53,13 @@ private:
 
     int mouseXLast;
     int mouseYLast;
-    bool mouseIgnore;
 
     bool moveForward;
     bool moveBackward;
     bool moveLeft;
     bool moveRight;
+
+    bool running;
 };
 
 #endif // VIEW3D_H

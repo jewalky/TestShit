@@ -26,6 +26,7 @@ private:
     Ui::OpenMapDialog *ui;
 
     WADFile* wad;
+    QString filename;
 };
 
 #endif // OPENMAPDIALOG_H

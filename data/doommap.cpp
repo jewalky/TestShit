@@ -258,7 +258,25 @@ void DoomMap::initClassic(QIODevice* things, QIODevice* linedefs, QIODevice* sid
             ln.id = (int)tag;
             ln.sidefront = (sidefront < 0xFFFF) ? (int)sidefront : -1;
             ln.sideback = (sideback < 0xFFFF) ? (int)sideback : -1;
-            // todo parse flags
+            if ((flags & 0x0001) == 0x0001)
+                ln.blocking = true;
+            if ((flags & 0x0002) == 0x0002)
+                ln.blockmonsters = true;
+            if ((flags & 0x0004) == 0x0004)
+                ln.twosided = true;
+            if ((flags & 0x0008) == 0x0008)
+                ln.dontpegtop = true;
+            if ((flags & 0x0010) == 0x0010)
+                ln.dontpegbottom = true;
+            if ((flags & 0x0020) == 0x0020)
+                ln.secret = true;
+            if ((flags & 0x0040) == 0x0040)
+                ln.blocksound = true;
+            if ((flags & 0x0080) == 0x0080)
+                ln.dontdraw = true;
+            if ((flags & 0x0100) == 0x0100)
+                ln.mapped = true;
+            // todo parse zdoom/boom/strife flags
             this->linedefs.append(ln);
         }
     }

@@ -225,6 +225,17 @@ public:
         return &getParent()->vertices[v2];
     }
 
+    DoomMapSidedef* getSidedef(DoomMapSector* sector)
+    {
+        DoomMapSidedef* front = getFront();
+        DoomMapSidedef* back = getBack();
+        DoomMapSector* frontSector = front ? front->getSector() : 0;
+        DoomMapSector* backSector = back ? back->getSector() : 0;
+        if (frontSector == sector) return front;
+        else if (backSector == sector) return back;
+        return 0;
+    }
+
     DoomMapSidedef* getFront()
     {
         if (sidefront < 0 || sidefront >= getParent()->sidedefs.size())

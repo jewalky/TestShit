@@ -20,7 +20,8 @@ SOURCES += main.cpp\
     openmapdialog.cpp \
     view2d.cpp \
     glarray.cpp \
-    view3d.cpp
+    view3d.cpp \
+    data/texman.cpp
 
 HEADERS  += mainwindow.h \
     data/doommap.h \
@@ -28,9 +29,13 @@ HEADERS  += mainwindow.h \
     openmapdialog.h \
     view2d.h \
     glarray.h \
-    view3d.h
+    view3d.h \
+    data/texman.h
 
 FORMS    += mainwindow.ui \
     openmapdialog.ui
 
 include(../QxPoly2Tri/QxPoly2Tri.pri)
+
+RESOURCES += \
+    resources.qrc
