@@ -335,6 +335,44 @@ void DoomMap::initClassic(QIODevice* things, QIODevice* linedefs, QIODevice* sid
         sec.id = (int)tag;
         this->sectors.append(sec);
     }
+
+    // unpack sidedefs, also remove invalid sidedefs.
+    for (int i = 0; i < this->linedefs.size(); i++)
+    {
+        if (this->linedefs[i].sidefront >= this->sidedefs.size())
+            this->linedefs[i].sidefront = -1;
+        if (this->linedefs[i].sideback >= this->sidedefs.size())
+            this->linedefs[i].sideback = -1;
+    }
+
+    for (int i = 0; i < this->linedefs.size(); i++)
+    {
+        int vfront = this->linedefs[i].sidefront;
+        int vback = this->linedefs[i].sideback;
+
+        for (int j = 0; j < this->linedefs.size(); j++)
+        {
+            if (i == j)
+                continue;
+
+            int cfront = this->linedefs[j].sidefront;
+            int cback = this->linedefs[j].sideback;
+
+            if (cfront >= 0 && (cfront == vfront || cfront == vback))
+            {
+                DoomMapSidedef side = this->sidedefs[cfront];
+                this->sidedefs.append(side);
+                this->linedefs[j].sidefront = this->sidedefs.size()-1;
+            }
+
+            if (cback >= 0 && (cback == vfront || cback == vback))
+            {
+                DoomMapSidedef side = this->sidedefs[cback];
+                this->sidedefs.append(side);
+                this->linedefs[j].sideback = this->sidedefs.size()-1;
+            }
+        }
+    }
 }
 
 static float DoomMapSectorArea(QPolygonF& p)

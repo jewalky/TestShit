@@ -8,6 +8,10 @@
 
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QGLFramebufferObject>
+
+#include <QGLShaderProgram>
+#include <QGLShader>
 
 #include "glarray.h"
 
@@ -34,10 +38,26 @@ public:
 
     void becameVisible();
 
+    // hover enum.
+    // includes some types that aren't done yet.
+    enum HoverType
+    {
+        Hover_None,
+        Hover_Floor,
+        Hover_Ceiling,
+        Hover_SidedefTop,
+        Hover_SidedefMiddle,
+        Hover_SidedefBottom,
+        Hover_Thing,
+        Hover_VertexTop,
+        Hover_VertexBottom
+    };
+
 public slots:
     void repaintTimerHandler();
 
 private:
+    void render(int pass);
     void setPerspective(float fov);
 
     QTimer* repaintTimer;
@@ -60,6 +80,14 @@ private:
     bool moveRight;
 
     bool running;
+
+    HoverType hoverType;
+    int hoverId;
+
+    QGLFramebufferObject* hoverFBO;
+
+    // mouseover shader. I'm too lazy to make gltexenvi calls, especially that two colors need to be added.
+    QGLShaderProgram highlightShader;
 };
 
 #endif // VIEW3D_H

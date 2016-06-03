@@ -1,0 +1,17 @@
+uniform sampler2D myTexture;
+uniform vec4 uHighlightColor;
+
+varying vec2 vTexCoord;
+varying float fogZ;
+
+uniform vec2 uFogSize;
+
+void main(void)
+{
+    float fogFactor = (uFogSize[0] - fogZ)/(uFogSize[1] - uFogSize[0]);
+    fogFactor = clamp(fogFactor, 0.0, 1.0);
+
+    vec4 color = texture2D(myTexture, vTexCoord) * gl_Color;
+    color = mix(color, vec4(uHighlightColor.rgb, 1), uHighlightColor.a);
+    gl_FragColor = mix(gl_Fog.color, color, fogFactor);
+}

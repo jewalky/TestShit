@@ -33,9 +33,6 @@ int TexTexture::getTexture()
         glw->context()->makeCurrent();
     }
 
-    bool wasenabled = glIsEnabled(GL_TEXTURE_2D);
-
-    if (!wasenabled) glEnable(GL_TEXTURE_2D);
     glGenTextures(1, (GLuint*)&texture);
     glBindTexture(GL_TEXTURE_2D, texture);
     glTexImage2D(GL_TEXTURE_2D, 0, 4, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixels);
@@ -43,7 +40,6 @@ int TexTexture::getTexture()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    if (!wasenabled) glDisable(GL_TEXTURE_2D);
 
     if (!keeppixels)
     {

@@ -1,5 +1,7 @@
 <RCC>
     <qresource prefix="/">
         <file>resources/_BROKEN.png</file>
+        <file>resources/highlightShader.fr</file>
+        <file>resources/highlightShader.vx</file>
     </qresource>
 </RCC>
