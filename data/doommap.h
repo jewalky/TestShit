@@ -347,11 +347,12 @@ public:
             bool hfront = (front && front->getSector() == sector);
             bool hback = (back && back->getSector() == sector);
 
-            if (hfront && hback)
-                continue;
-
             if (hfront || hback)
-                linedefs.append(&p->linedefs[i]);
+            {
+                alllinedefs.append(&p->linedefs[i]);
+                if (!hfront || !hback)
+                    linedefs.append(&p->linedefs[i]);
+            }
         }
     }
 
@@ -359,6 +360,11 @@ public:
     QVector<DoomMapLinedef*> getLinedefs()
     {
         return linedefs;
+    }
+
+    QVector<DoomMapLinedef*> getAllLinedefs()
+    {
+        return alllinedefs;
     }
 
     // returns a list of separate line loops in this sector.
@@ -396,6 +402,7 @@ private:
     DoomMapSector* sector;
 
     // a list of linedefs in the reference sector.
+    QVector<DoomMapLinedef*> alllinedefs; // including self referencing
     QVector<DoomMapLinedef*> linedefs;
 
     // a list of linedefs that have already been traversed.

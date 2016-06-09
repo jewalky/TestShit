@@ -1,0 +1,10 @@
+uniform sampler2D myTexture;
+varying vec2 vTexCoord;
+
+void main(void)
+{
+    vec4 color = texture2D(myTexture, vTexCoord);
+    // evil condition!
+    if (color.a < 0.5) discard;
+    gl_FragColor = gl_Color;
+}

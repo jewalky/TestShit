@@ -686,7 +686,7 @@ void DoomMapSector::triangulate()
     }
 
     updateBoundingBox();
-    linedefs = spt.getLinedefs();
+    linedefs = spt.getAllLinedefs();
     for (int i = 0; i < linedefs.size(); i++)
     {
         DoomMapVertex* v1 = linedefs[i]->getV1();

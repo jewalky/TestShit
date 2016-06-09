@@ -88,6 +88,18 @@ private:
 
     // mouseover shader. I'm too lazy to make gltexenvi calls, especially that two colors need to be added.
     QGLShaderProgram highlightShader;
+    QGLShaderProgram midtexSelectShader;
+
+    void initShader(QString name, QGLShaderProgram& out, QString filenamevx, QString filenamefr);
+
+    // unlike view2d, here it's used only for the crosshair
+    void renderOverlay();
+    void setClipRect(int x, int y, int w, int h);
+
+    //
+    friend class ScheduledObject;
+    friend class ScheduledSidedef;
+    friend class ScheduledThing;
 };
 
 #endif // VIEW3D_H

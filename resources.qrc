@@ -3,5 +3,8 @@
         <file>resources/_BROKEN.png</file>
         <file>resources/highlightShader.fr</file>
         <file>resources/highlightShader.vx</file>
+        <file>resources/xhair.png</file>
+        <file>resources/midtexSelectShader.fr</file>
+        <file>resources/midtexSelectShader.vx</file>
     </qresource>
 </RCC>

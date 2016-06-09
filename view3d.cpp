@@ -24,7 +24,7 @@ View3D::View3D(QWidget* parent) : QGLWidget(GetView3DFormat(), parent, MainWindo
 
     repaintTimer = new QTimer(this);
     connect(repaintTimer, SIGNAL(timeout()), this, SLOT(repaintTimerHandler()));
-    repaintTimer->setInterval(20);
+    repaintTimer->setInterval(35); // ~30fps
     repaintTimer->start();
 
     wasVisible = false;
@@ -35,26 +35,36 @@ View3D::View3D(QWidget* parent) : QGLWidget(GetView3DFormat(), parent, MainWindo
     hoverFBO = 0;
 }
 
+void View3D::initShader(QString name, QGLShaderProgram& out, QString filenamevx, QString filenamefr)
+{
+    if (!out.addShaderFromSourceFile(QGLShader::Vertex, filenamevx))
+    {
+        qDebug("View3D: failed to compile %s shader/vertex: %s", name.toUtf8().data(), highlightShader.log().toUtf8().data());
+        return;
+    }
+
+    if (!out.addShaderFromSourceFile(QGLShader::Fragment, filenamefr))
+    {
+        qDebug("View3D: failed to compile %s shader/fragment: %s", name.toUtf8().data(), highlightShader.log().toUtf8().data());
+        return;
+    }
+
+    if (!out.link())
+    {
+        qDebug("View3D: failed to link %s shader: %s", name.toUtf8().data(), highlightShader.log().toUtf8().data());
+        return;
+    }
+}
+
 void View3D::initializeGL()
 {
     qDebug("initializing GL...");
-    if (!highlightShader.addShaderFromSourceFile(QGLShader::Vertex, ":/resources/highlightShader.vx"))
-    {
-        qDebug("View3D: failed to compile highlight shader/vertex: %s", highlightShader.log().toUtf8().data());
-        return;
-    }
 
-    if (!highlightShader.addShaderFromSourceFile(QGLShader::Fragment, ":/resources/highlightShader.fr"))
-    {
-        qDebug("View3D: failed to compile highlight shader/fragment: %s", highlightShader.log().toUtf8().data());
-        return;
-    }
+    // init entity highlight shader (basically mixes some highlight color with the texture)
+    initShader("highlight", highlightShader, ":/resources/highlightShader.vx", ":/resources/highlightShader.fr");
 
-    if (!highlightShader.link())
-    {
-        qDebug("View3D: failed to link highlight shader: %s", highlightShader.log().toUtf8().data());
-        return;
-    }
+    // init midtex select shader (stencil-like rendering only with alpha >0.5 of the actual midtex texture, used in offscreen rendering of masks)
+    initShader("midtex select", midtexSelectShader, ":/resources/midtexSelectShader.vx", ":/resources/midtexSelectShader.fr");
 
     highlightShader.setUniformValue("uHighlightColor", QVector4D(0, 0, 0, 0));
 }
@@ -92,8 +102,22 @@ void View3D::resizeGL(int width, int height)
     update();
 }
 
+#include <QElapsedTimer>
+static QElapsedTimer qetfps;
+static int intfps = 0;
 void View3D::repaintTimerHandler()
 {
+    if (!qetfps.isValid())
+        qetfps.start();
+
+    intfps++;
+    if (qetfps.elapsed() > 1000)
+    {
+        qDebug("FPS: %d", intfps);
+        intfps = 0;
+        qetfps.restart();
+    }
+
     // do something else? otherwise just remove this and connect to repaint()
     //update();
 
@@ -122,7 +146,7 @@ void View3D::repaintTimerHandler()
     if (moveLeft) dx -= 1;
     if (moveRight) dx += 1;
 
-    float movemul = 6;
+    float movemul = 14;
     if (running)
         movemul *= 3;
 
@@ -135,7 +159,7 @@ void View3D::repaintTimerHandler()
     posY -= movevec.dy()*movemul;
 
     //
-    update();
+    repaint();
 }
 
 void View3D::initMap()
@@ -313,12 +337,25 @@ void View3D::setPerspective(float fov)
 
 // ewwwwwwwwwwwwwwwwwwwwwwwww this function is so ugly
 // it's used to compute similar, but different texture offsets for top/bottom/middle linedef parts.
-static void View3D_Helper_SetTextureOffsets(GLVertex& vv1, GLVertex& vv2, GLVertex& vv3, GLVertex& vv4, DoomMapSector* sector, DoomMapSector* other, DoomMapLinedef* linedef, DoomMapSidedef* sidedef, QLineF& line, TexTexture* tex, bool top)
+static void View3D_Helper_SetTextureOffsets(GLVertex& vv1, GLVertex& vv2, GLVertex& vv3, GLVertex& vv4, DoomMapSector* sector, DoomMapSector* other, DoomMapLinedef* linedef, DoomMapSidedef* sidedef, QLineF& line, TexTexture* tex, int part)
 {
+    bool top = (part == 0);
+    bool bottom = (part == 2);
+    bool middle = (part == 1);
+
     float xbase = sidedef->offsetx;
     float ybase = sidedef->offsety;
     // lower unpegged means the texture should have origin at it's bottom, not top.
-    if (linedef->dontpegbottom && !top)
+    if (middle)
+    {
+        // if texture is lower unpegged, move it to bottom of own sidedef
+        if (linedef->dontpegbottom)
+        {
+            int ptd = (sector->heightceiling-sector->heightfloor) - tex->getHeight();
+            ybase -= ptd;
+        }
+    }
+    else if (linedef->dontpegbottom && !top)
     {
         int highestfloor = sector->heightfloor;
         if (other) highestfloor = other->heightfloor;
@@ -347,10 +384,83 @@ static void View3D_Helper_SetTextureOffsets(GLVertex& vv1, GLVertex& vv2, GLVert
     vv4.v = ybase+ylen1;
 }
 
+struct ScheduledObject
+{
+    View3D* view3d;
+    QVector4D color_hl;
+    QVector4D color_sel;
+    float z;
+
+    virtual void render(int pass) = 0;
+    virtual QVector4D getHighlight(int pass) = 0;
+
+    static int SortHelper(const void* a, const void* b)
+    {
+        const ScheduledObject* soa = *(ScheduledObject**)a;
+        const ScheduledObject* sob = *(ScheduledObject**)b;
+
+        if (soa->z < sob->z) return -1;
+        if (soa->z > sob->z) return 1;
+        return 0;
+    }
+};
+
+struct ScheduledSidedef : public ScheduledObject
+{
+    GLArray array;
+    TexTexture* texture;
+    int id;
+
+    virtual void render(int pass)
+    {
+        if (pass == 1)
+        {
+            //glDepthMask(GL_FALSE);
+            //glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        }
+        else if (pass == 0) glDisable(GL_BLEND);
+
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, texture->getTexture());
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+
+        // draw midtex
+        array.draw(GL_QUADS);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glDisable(GL_TEXTURE_2D);
+
+        if (pass == 1)
+        {
+            // restore texture wrapping parameters
+            //glDepthMask(GL_TRUE);
+        }
+        else if (pass == 0) glEnable(GL_BLEND);
+    }
+
+    virtual QVector4D getHighlight(int pass)
+    {
+        if (pass != 1) return QVector4D(0, 0, 0, 0);
+
+        if (view3d->hoverType == View3D::Hover_SidedefMiddle &&
+                view3d->hoverId == id) return color_hl;
+
+        return QVector4D(0, 0, 0, 0);
+    }
+};
+
 void View3D::render(int pass)
 {
     // pass = 0 = render without fog and without textures; used for highlighting purposes.
     // pass = 1 = render for display
+
+    // get matrix.
+    GLfloat rawmodelview[16];
+    glGetFloatv(GL_MODELVIEW_MATRIX, rawmodelview);
+    QMatrix4x4 modelview(rawmodelview);
+
+    QVector4D color_hl(0.5, 0.25, 0.0, 0.5);
+    QVector4D color_sel(0.5, 0.0, 0.0, 0.5);
 
     glClearColor(0, 0, 0, 0);
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
@@ -366,6 +476,8 @@ void View3D::render(int pass)
         highlightShader.bind();
         highlightShader.setUniformValue("uFogSize", QVector2D(rdist-64, rdist));
     }
+
+    QVector<ScheduledObject*> scheduled;
 
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
@@ -482,15 +594,15 @@ void View3D::render(int pass)
 
                 if (pass == 1)
                 {
-                    View3D_Helper_SetTextureOffsets(vv1, vv2, vv3, vv4, sector, 0, linedef, sidedef, line, tex, false);
+                    View3D_Helper_SetTextureOffsets(vv1, vv2, vv3, vv4, sector, 0, linedef, sidedef, line, tex, 2);
                 }
 
                 if (pass == 0)
                 {
-                    VIEW3D_HELPER_PACKHOVERID(vv1.r, vv1.g, vv1.b, vv1.a, Hover_SidedefMiddle, sidedef-cmap->sidedefs.data());
-                    VIEW3D_HELPER_PACKHOVERID(vv2.r, vv2.g, vv2.b, vv2.a, Hover_SidedefMiddle, sidedef-cmap->sidedefs.data());
-                    VIEW3D_HELPER_PACKHOVERID(vv3.r, vv3.g, vv3.b, vv3.a, Hover_SidedefMiddle, sidedef-cmap->sidedefs.data());
-                    VIEW3D_HELPER_PACKHOVERID(vv4.r, vv4.g, vv4.b, vv4.a, Hover_SidedefMiddle, sidedef-cmap->sidedefs.data());
+                    VIEW3D_HELPER_PACKHOVERID(vv1.r, vv1.g, vv1.b, vv1.a, Hover_SidedefMiddle, sd_id);
+                    VIEW3D_HELPER_PACKHOVERID(vv2.r, vv2.g, vv2.b, vv2.a, Hover_SidedefMiddle, sd_id);
+                    VIEW3D_HELPER_PACKHOVERID(vv3.r, vv3.g, vv3.b, vv3.a, Hover_SidedefMiddle, sd_id);
+                    VIEW3D_HELPER_PACKHOVERID(vv4.r, vv4.g, vv4.b, vv4.a, Hover_SidedefMiddle, sd_id);
                 }
 
                 GLArray quads;
@@ -505,7 +617,7 @@ void View3D::render(int pass)
                     glBindTexture(GL_TEXTURE_2D, tex->getTexture());
                 }
 
-                if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_SidedefMiddle && hoverId == sd_id) ? QVector4D(0.5, 0.25, 0, 0.5) : QVector4D(0, 0, 0, 0));
+                if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_SidedefMiddle && hoverId == sd_id) ? color_hl : QVector4D(0, 0, 0, 0));
                 quads.draw(GL_QUADS);
 
                 if (pass == 1)
@@ -528,11 +640,12 @@ void View3D::render(int pass)
                 // evaluate texture offsets
                 TexTexture* textop = Tex_GetTexture(sidedef->texturetop, TexTexture::Texture, true);
                 TexTexture* texbottom = Tex_GetTexture(sidedef->texturebottom, TexTexture::Texture, true);
+                TexTexture* texmiddle = (sidedef->texturemiddle != "-") ? Tex_GetTexture(sidedef->texturemiddle, TexTexture::Texture, true) : 0;
 
                 if (pass == 1)
                 {
-                    View3D_Helper_SetTextureOffsets(vv1, vv2, ov2, ov1, sector, other, linedef, sidedef, line, textop, true);
-                    View3D_Helper_SetTextureOffsets(ov4, ov3, vv3, vv4, sector, other, linedef, sidedef, line, texbottom, false);
+                    View3D_Helper_SetTextureOffsets(vv1, vv2, ov2, ov1, sector, other, linedef, sidedef, line, textop, 0);
+                    View3D_Helper_SetTextureOffsets(ov4, ov3, vv3, vv4, sector, other, linedef, sidedef, line, texbottom, 2);
                 }
 
                 GLArray quads;
@@ -546,17 +659,17 @@ void View3D::render(int pass)
 
                 if (pass == 0)
                 {
-                    VIEW3D_HELPER_PACKHOVERID(vv1.r, vv1.g, vv1.b, vv1.a, Hover_SidedefTop, sidedef-cmap->sidedefs.data());
-                    VIEW3D_HELPER_PACKHOVERID(vv2.r, vv2.g, vv2.b, vv2.a, Hover_SidedefTop, sidedef-cmap->sidedefs.data());
-                    VIEW3D_HELPER_PACKHOVERID(ov2.r, ov2.g, ov2.b, ov2.a, Hover_SidedefTop, sidedef-cmap->sidedefs.data());
-                    VIEW3D_HELPER_PACKHOVERID(ov1.r, ov1.g, ov1.b, ov1.a, Hover_SidedefTop, sidedef-cmap->sidedefs.data());
+                    VIEW3D_HELPER_PACKHOVERID(vv1.r, vv1.g, vv1.b, vv1.a, Hover_SidedefTop, sd_id);
+                    VIEW3D_HELPER_PACKHOVERID(vv2.r, vv2.g, vv2.b, vv2.a, Hover_SidedefTop, sd_id);
+                    VIEW3D_HELPER_PACKHOVERID(ov2.r, ov2.g, ov2.b, ov2.a, Hover_SidedefTop, sd_id);
+                    VIEW3D_HELPER_PACKHOVERID(ov1.r, ov1.g, ov1.b, ov1.a, Hover_SidedefTop, sd_id);
                 }
 
                 quads.vertices.append(vv1);
                 quads.vertices.append(vv2);
                 quads.vertices.append(ov2);
                 quads.vertices.append(ov1);
-                if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_SidedefTop && hoverId == sd_id) ? QVector4D(0.5, 0.25, 0, 0.5) : QVector4D(0, 0, 0, 0));
+                if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_SidedefTop && hoverId == sd_id) ? color_hl : QVector4D(0, 0, 0, 0));
                 quads.draw(GL_QUADS);
                 quads.vertices.clear();
 
@@ -568,22 +681,60 @@ void View3D::render(int pass)
 
                 if (pass == 0)
                 {
-                    VIEW3D_HELPER_PACKHOVERID(ov4.r, ov4.g, ov4.b, ov4.a, Hover_SidedefBottom, sidedef-cmap->sidedefs.data());
-                    VIEW3D_HELPER_PACKHOVERID(ov3.r, ov3.g, ov3.b, ov3.a, Hover_SidedefBottom, sidedef-cmap->sidedefs.data());
-                    VIEW3D_HELPER_PACKHOVERID(vv3.r, vv3.g, vv3.b, vv3.a, Hover_SidedefBottom, sidedef-cmap->sidedefs.data());
-                    VIEW3D_HELPER_PACKHOVERID(vv4.r, vv4.g, vv4.b, vv4.a, Hover_SidedefBottom, sidedef-cmap->sidedefs.data());
+                    VIEW3D_HELPER_PACKHOVERID(ov4.r, ov4.g, ov4.b, ov4.a, Hover_SidedefBottom, sd_id);
+                    VIEW3D_HELPER_PACKHOVERID(ov3.r, ov3.g, ov3.b, ov3.a, Hover_SidedefBottom, sd_id);
+                    VIEW3D_HELPER_PACKHOVERID(vv3.r, vv3.g, vv3.b, vv3.a, Hover_SidedefBottom, sd_id);
+                    VIEW3D_HELPER_PACKHOVERID(vv4.r, vv4.g, vv4.b, vv4.a, Hover_SidedefBottom, sd_id);
                 }
 
                 quads.vertices.append(ov4);
                 quads.vertices.append(ov3);
                 quads.vertices.append(vv3);
                 quads.vertices.append(vv4);
-                if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_SidedefBottom && hoverId == sd_id) ? QVector4D(0.5, 0.25, 0, 0.5) : QVector4D(0, 0, 0, 0));
+                if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_SidedefBottom && hoverId == sd_id) ? color_hl : QVector4D(0, 0, 0, 0));
                 quads.draw(GL_QUADS);
 
                 if (pass == 1)
                 {
                     glDisable(GL_TEXTURE_2D);
+                }
+
+                // schedule sidedef
+                // calculate z coord
+                // middle texture
+                if (texmiddle != 0)
+                {
+                    ScheduledSidedef* ssd = new ScheduledSidedef();
+                    ssd->view3d = this;
+                    ssd->color_hl = color_hl;
+                    ssd->color_sel = color_sel;
+                    ssd->id = sd_id;
+
+                    View3D_Helper_SetTextureOffsets(ov1, ov2, ov3, ov4, sector, other, linedef, sidedef, line, texmiddle, 1);
+
+                    if (pass == 0)
+                    {
+                        VIEW3D_HELPER_PACKHOVERID(ov1.r, ov1.g, ov1.b, ov1.a, Hover_SidedefMiddle, sd_id);
+                        VIEW3D_HELPER_PACKHOVERID(ov2.r, ov2.g, ov2.b, ov2.a, Hover_SidedefMiddle, sd_id);
+                        VIEW3D_HELPER_PACKHOVERID(ov3.r, ov3.g, ov3.b, ov3.a, Hover_SidedefMiddle, sd_id);
+                        VIEW3D_HELPER_PACKHOVERID(ov4.r, ov4.g, ov4.b, ov4.a, Hover_SidedefMiddle, sd_id);
+                    }
+
+                    // draw midtex
+                    quads.vertices.clear();
+                    quads.vertices.append(ov1);
+                    quads.vertices.append(ov2);
+                    quads.vertices.append(ov3);
+                    quads.vertices.append(ov4);
+                    ssd->array = quads;
+                    ssd->texture = texmiddle;
+
+                    // put z coord
+                    GLVertex center = quads.getCenter();
+                    QVector3D centermult = QVector3D(center.x, center.y, center.z) * modelview;
+                    ssd->z = centermult.z();
+
+                    scheduled.append(ssd);
                 }
             }
         }
@@ -597,7 +748,7 @@ void View3D::render(int pass)
         int sec_id = sector-cmap->sectors.data();
 
         glFrontFace(GL_CCW);
-        if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_Floor && hoverId == sec_id) ? QVector4D(0.5, 0.25, 0, 0.5) : QVector4D(0, 0, 0, 0));
+        if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_Floor && hoverId == sec_id) ? color_hl : QVector4D(0, 0, 0, 0));
         tri_floor.draw(GL_TRIANGLES);
         glFrontFace(GL_CW);
 
@@ -606,7 +757,7 @@ void View3D::render(int pass)
             glBindTexture(GL_TEXTURE_2D, flatceiling->getTexture());
         }
 
-        if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_Ceiling && hoverId == sec_id) ? QVector4D(0.5, 0.25, 0, 0.5) : QVector4D(0, 0, 0, 0));
+        if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_Ceiling && hoverId == sec_id) ? color_hl : QVector4D(0, 0, 0, 0));
         tri_ceiling.draw(GL_TRIANGLES);
 
         if (pass == 1)
@@ -616,6 +767,21 @@ void View3D::render(int pass)
     }
 
     glEnable(GL_BLEND);
+
+    // draw scheduled middle textures
+    qsort(scheduled.data(), scheduled.size(), sizeof(ScheduledObject*), &ScheduledObject::SortHelper);
+    if (pass == 0) midtexSelectShader.bind();
+    for (int i = 0; i < scheduled.size(); i++)
+    {
+        ScheduledObject* o = scheduled[i];
+        if (pass == 1) highlightShader.setUniformValue("uHighlightColor", o->getHighlight(pass));
+        o->render(pass);
+        delete o;
+    }
+    if (pass == 0) midtexSelectShader.release();
+
+    scheduled.clear();
+
     glDisable(GL_DEPTH_TEST);
 
     if (pass == 1)
@@ -624,4 +790,43 @@ void View3D::render(int pass)
 
         glDisable(GL_FOG);
     }
+
+    if (pass == 1) // draw overlay
+    {
+        setClipRect(0, 0, width(), height());
+        renderOverlay();
+    }
+}
+
+void View3D::setClipRect(int x, int y, int w, int h)
+{
+    glViewport(x, height()-(y+h), w, h);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(x, x+w, y+h, y, -65536, 65536); // I doubt it will ever draw 64k sprites at once
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+}
+
+void View3D::renderOverlay()
+{
+    // draw crosshair in the middle.
+    static TexTexture* tex_Xhair = 0;
+    if (!tex_Xhair) tex_Xhair = TexTexture::fromImage(QImage(":///resources/xhair.png"));
+
+    float cx = width()/2;
+    float cy = height()/2;
+    float sz = (float)tex_Xhair->getWidth() / 2;
+
+    GLArray xhaira;
+    xhaira.vertices.append(GLVertex(cx-sz, cy-sz, 0, 0, 0));
+    xhaira.vertices.append(GLVertex(cx+sz, cy-sz, 0, 1, 0));
+    xhaira.vertices.append(GLVertex(cx+sz, cy+sz, 0, 1, 1));
+    xhaira.vertices.append(GLVertex(cx-sz, cy+sz, 0, 0, 1));
+
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, tex_Xhair->getTexture());
+    xhaira.draw(GL_QUADS);
+    glDisable(GL_TEXTURE_2D);
 }

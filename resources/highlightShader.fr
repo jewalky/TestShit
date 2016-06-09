@@ -12,6 +12,6 @@ void main(void)
     fogFactor = clamp(fogFactor, 0.0, 1.0);
 
     vec4 color = texture2D(myTexture, vTexCoord) * gl_Color;
-    color = mix(color, vec4(uHighlightColor.rgb, 1), uHighlightColor.a);
+    color = vec4(mix(color, vec4(uHighlightColor.rgb, 1), uHighlightColor.a).rgb, color.a);
     gl_FragColor = mix(gl_Fog.color, color, fogFactor);
 }
