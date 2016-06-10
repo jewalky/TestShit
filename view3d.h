@@ -105,6 +105,10 @@ private:
     friend class ScheduledObject;
     friend class ScheduledSidedef;
     friend class ScheduledThing;
+
+    bool cullArray(GLArray& a);
+    QMatrix4x4 modelview;
+    QMatrix4x4 projection;
 };
 
 #endif // VIEW3D_H

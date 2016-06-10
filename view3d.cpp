@@ -386,19 +386,6 @@ static void View3D_Helper_SetTextureOffsets(GLVertex& vv1, GLVertex& vv2, GLVert
     vv4.v = ybase+ylen1;
 }
 
-static bool View3D_Helper_CheckAgainstModelview(GLArray& a, QMatrix4x4& modelview)
-{
-    for (int i = 0; i < a.vertices.size(); i++)
-    {
-        GLVertex& v = a.vertices[i];
-        QVector3D v3d(v.x, v.y, v.z);
-        if ((v3d * modelview).z() < 0)
-            return true;
-    }
-
-    return false;
-}
-
 struct ScheduledObject
 {
     View3D* view3d;
@@ -430,6 +417,9 @@ struct ScheduledSidedef : public ScheduledObject
 
     virtual void render(int pass)
     {
+        if (!view3d->cullArray(array))
+            return;
+
         if (pass == 1)
         {
             //glDepthMask(GL_FALSE);
@@ -474,7 +464,11 @@ void View3D::render(int pass)
     // get matrix.
     GLfloat rawmodelview[16];
     glGetFloatv(GL_MODELVIEW_MATRIX, rawmodelview);
-    QMatrix4x4 modelview(rawmodelview);
+    modelview = QMatrix4x4(rawmodelview);
+
+    GLfloat rawprojection[16];
+    glGetFloatv(GL_PROJECTION_MATRIX, rawprojection);
+    projection = QMatrix4x4(rawprojection);
 
     QVector4D color_hl(0.5, 0.25, 0.0, 0.5);
     QVector4D color_sel(0.5, 0.0, 0.0, 0.5);
@@ -743,7 +737,7 @@ void View3D::render(int pass)
             {
                 TexTexture* tex = Tex_GetTexture(sidedef->texturemiddle, TexTexture::Texture, true);
 
-                if (View3D_Helper_CheckAgainstModelview(sidedef->glmiddle, modelview))
+                if (cullArray(sidedef->glmiddle))
                 {
                     glBindTexture(GL_TEXTURE_2D, tex->getTexture());
                     if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_SidedefMiddle && hoverId == sd_id) ? color_hl : QVector4D(0, 0, 0, 0));
@@ -757,7 +751,7 @@ void View3D::render(int pass)
                 TexTexture* texmiddle = (sidedef->texturemiddle != "-") ? Tex_GetTexture(sidedef->texturemiddle, TexTexture::Texture, true) : 0;
 
                 // top texture
-                if (View3D_Helper_CheckAgainstModelview(sidedef->gltop, modelview))
+                if (cullArray(sidedef->gltop))
                 {
                     glBindTexture(GL_TEXTURE_2D, textop->getTexture());
                     if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_SidedefTop && hoverId == sd_id) ? color_hl : QVector4D(0, 0, 0, 0));
@@ -765,7 +759,7 @@ void View3D::render(int pass)
                 }
 
                 // bottom texture
-                if (View3D_Helper_CheckAgainstModelview(sidedef->glbottom, modelview))
+                if (cullArray(sidedef->glbottom))
                 {
                     glBindTexture(GL_TEXTURE_2D, texbottom->getTexture());
                     if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_SidedefBottom && hoverId == sd_id) ? color_hl : QVector4D(0, 0, 0, 0));
@@ -801,7 +795,7 @@ void View3D::render(int pass)
         int sec_id = sector-cmap->sectors.data();
         int tricnt = sector->triangles.vertices.size();
 
-        if (View3D_Helper_CheckAgainstModelview(sector->glfloor, modelview))
+        if (cullArray(sector->glfloor))
         {
             glFrontFace(GL_CCW);
             if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_Floor && hoverId == sec_id) ? color_hl : QVector4D(0, 0, 0, 0));
@@ -809,7 +803,7 @@ void View3D::render(int pass)
             glFrontFace(GL_CW);
         }
 
-        if (View3D_Helper_CheckAgainstModelview(sector->glceiling, modelview))
+        if (cullArray(sector->glceiling))
         {
             glBindTexture(GL_TEXTURE_2D, flatceiling->getTexture());
             if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_Ceiling && hoverId == sec_id) ? color_hl : QVector4D(0, 0, 0, 0));
@@ -883,4 +877,18 @@ void View3D::renderOverlay()
     glBindTexture(GL_TEXTURE_2D, tex_Xhair->getTexture());
     xhaira.draw(GL_QUADS);
     glDisable(GL_TEXTURE_2D);
+}
+
+bool View3D::cullArray(GLArray& a)
+{
+    for (int i = 0; i < a.vertices.size(); i++)
+    {
+        GLVertex& v = a.vertices[i];
+        QVector3D v3d(v.x, v.y, v.z);
+        v3d = v3d * modelview;
+        if (v3d.z() < 0)
+            return true;
+    }
+
+    return false;
 }
