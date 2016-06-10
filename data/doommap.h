@@ -109,12 +109,19 @@ public:
 
     int sector;
 
+    // these are vertices for top, bottom and middle parts of this sidedef.
+    GLArray gltop;
+    GLArray glbottom;
+    GLArray glmiddle;
+    bool glupdate;
+
     DoomMapSidedef() : DoomMapComponent(0) {}
     DoomMapSidedef(DoomMap* parent) : DoomMapComponent(parent)
     {
         offsetx = offsety = 0;
         texturetop = texturebottom = texturemiddle = "-";
         sector = -1;
+        glupdate = false;
     }
 
     DoomMapSector* getSector()
@@ -272,6 +279,7 @@ public:
         texturefloor = textureceiling = "-";
         lightlevel = 160;
         special = id = 0;
+        glupdate = false;
     }
 
     // generate sector triangles
@@ -281,6 +289,11 @@ public:
     QVector<DoomMapVertex*> vertices; // all vertices of sector.
     QVector<DoomMapLinedef*> linedefs; // all linedefs of sector.
     QRectF boundingBox; // bounding box of sector.
+
+    // opengl
+    GLArray glfloor;
+    GLArray glceiling;
+    bool glupdate;
 
     void updateBoundingBox()
     {

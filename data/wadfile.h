@@ -5,24 +5,46 @@
 #include <QIODevice>
 #include <QVector>
 
+enum WADNamespace
+{
+    NS_Global,
+    NS_Sprites,
+    NS_Flats,
+    NS_Colormaps,
+    NS_ACS,
+    NS_Textures,
+    NS_Voices,
+    NS_Hires,
+    NS_Sounds,
+    NS_Patches,
+    NS_Graphics,
+    NS_Music,
+    NS_Skin,
+    NS_Voxels,
+    NS_Any = -1
+};
+
 class WADEntry
 {
 public:
-    WADEntry(QString name, int offset, QByteArray data)
+    WADEntry(QString name, int offset, WADNamespace ns, QByteArray data)
     {
         this->name = name;
         this->offset = offset;
+        this->ns = ns;
         this->data = data;
     }
 
     QString getName() { return name; }
     int getOffset() { return offset; }
+    WADNamespace getNamespace() { return ns; }
     QByteArray& getData() { return data; }
 
 private:
     QString name;
     int offset;
     QByteArray data;
+    WADNamespace ns;
 };
 
 class WADFile
@@ -41,8 +63,8 @@ public:
     WADEntry* removeEntry(int num);
     void putEntry(int num, WADEntry* ent);
 
-    int getNumForName(QString name, int num = 0);
-    int getLastNumForName(QString name, int num = 2147483647);
+    int getNumForName(QString name, int num = 0, WADNamespace ns = NS_Any);
+    int getLastNumForName(QString name, int num = -1, WADNamespace ns = NS_Any);
     int getSize() { return entries.size(); }
 
 private:

@@ -3,6 +3,7 @@
 
 #include <QtGlobal>
 #include <QVector>
+#include <QGLBuffer>
 
 struct GLVertex
 {
@@ -63,6 +64,16 @@ public:
 
         return GLVertex(x, y, z);
     }
+
+    bool isVBO() { return useVBO; }
+    void setVBO(bool vbo) { useVBO = true; }
+
+private:
+    QGLBuffer vboVertices;
+    QGLBuffer vboUV;
+    QGLBuffer vboColors;
+
+    bool useVBO;
 };
 
 #endif // GLARRAY_H

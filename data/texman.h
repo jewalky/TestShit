@@ -17,6 +17,27 @@ struct TexResource
 
     QString name;
     Type type;
+    WADFile* resource; // todo replace with some WADFile ancestor
+
+    bool wad_strictPatches;
+    bool dir_rootTextures;
+    bool dir_rootFlats;
+    bool exclude;
+
+    TexResource()
+    {
+        resource = 0;
+        wad_strictPatches = false;
+        dir_rootTextures = false;
+        dir_rootFlats = false;
+        exclude = false;
+    }
+
+    void reload()
+    {
+        if (resource) delete resource;
+        resource = WADFile::fromFile(name);
+    }
 };
 
 class TexTexture
@@ -93,6 +114,6 @@ struct DoomTexture1Texture
     QVector<DoomTexture1Patch> patches;
 };
 
-QVector<DoomTexture1Texture> Tex_ReadTexture1(WADFile* wad, QString lumpname);
+QVector<DoomTexture1Texture> Tex_ReadTexture1(WADEntry* ent);
 
 #endif // TEXMAN_H

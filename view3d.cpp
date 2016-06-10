@@ -24,7 +24,7 @@ View3D::View3D(QWidget* parent) : QGLWidget(GetView3DFormat(), parent, MainWindo
 
     repaintTimer = new QTimer(this);
     connect(repaintTimer, SIGNAL(timeout()), this, SLOT(repaintTimerHandler()));
-    repaintTimer->setInterval(35); // ~30fps
+    repaintTimer->setInterval(26); // ~30fps
     repaintTimer->start();
 
     wasVisible = false;
@@ -33,6 +33,8 @@ View3D::View3D(QWidget* parent) : QGLWidget(GetView3DFormat(), parent, MainWindo
     running = false;
 
     hoverFBO = 0;
+
+    rdist = 1024;
 }
 
 void View3D::initShader(QString name, QGLShaderProgram& out, QString filenamevx, QString filenamefr)
@@ -305,7 +307,7 @@ void View3D::setPerspective(float fov)
     float aspect = (float)width() / height();
     float fovy = fov/aspect;
     float zNear = 1;
-    float zFar = 65536;
+    float zFar = rdist;
 
     GLdouble xmin, xmax, ymin, ymax;
 
@@ -384,6 +386,19 @@ static void View3D_Helper_SetTextureOffsets(GLVertex& vv1, GLVertex& vv2, GLVert
     vv4.v = ybase+ylen1;
 }
 
+static bool View3D_Helper_CheckAgainstModelview(GLArray& a, QMatrix4x4& modelview)
+{
+    for (int i = 0; i < a.vertices.size(); i++)
+    {
+        GLVertex& v = a.vertices[i];
+        QVector3D v3d(v.x, v.y, v.z);
+        if ((v3d * modelview).z() < 0)
+            return true;
+    }
+
+    return false;
+}
+
 struct ScheduledObject
 {
     View3D* view3d;
@@ -410,6 +425,8 @@ struct ScheduledSidedef : public ScheduledObject
     GLArray array;
     TexTexture* texture;
     int id;
+    int start;
+    int len;
 
     virtual void render(int pass)
     {
@@ -425,7 +442,7 @@ struct ScheduledSidedef : public ScheduledObject
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 
         // draw midtex
-        array.draw(GL_QUADS);
+        array.draw(GL_QUADS, start, len);
 
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
         glDisable(GL_TEXTURE_2D);
@@ -469,12 +486,17 @@ void View3D::render(int pass)
     if (!cmap)
         return;
 
-    float rdist = 1024;
+    int rpass = 1;
 
     if (pass == 1)
     {
+        rpass = 0;
         highlightShader.bind();
         highlightShader.setUniformValue("uFogSize", QVector2D(rdist-64, rdist));
+    }
+    else if (pass == 0)
+    {
+        midtexSelectShader.bind();
     }
 
     QVector<ScheduledObject*> scheduled;
@@ -484,13 +506,16 @@ void View3D::render(int pass)
     glEnable(GL_DEPTH_TEST);
     // hueeeeeeeeeeeeeeeeeeeeeeeeee
     glDisable(GL_BLEND);
+    glEnable(GL_TEXTURE_2D);
 
+    int ds = 0;
     for (int i = 0; i < cmap->sectors.size(); i++)
     {
         DoomMapSector* sector = &cmap->sectors[i];
         // dont render if too far
         if (!sector->isAnyWithin(posX, -posY, rdist+64))
             continue;
+        ds++;
 
         // find ceiling texture
         // this NEVER returns null. at most - embedded resource that says "BROKEN TEXTURE"
@@ -498,36 +523,53 @@ void View3D::render(int pass)
         TexTexture* flatfloor = Tex_GetTexture(sector->texturefloor, TexTexture::Flat, true);
 
         // draw sector's floor and ceiling first
-        GLArray tri_floor = sector->triangles, tri_ceiling = sector->triangles;
-        for (int j = 0; j < sector->triangles.vertices.size(); j++)
+        if (sector->glupdate)
         {
-            GLVertex& fv = tri_floor.vertices[j];
-            GLVertex& cv = tri_ceiling.vertices[j];
+            sector->glupdate = false;
+            sector->glfloor.vertices.clear();
+            sector->glceiling.vertices.clear();
 
-            fv.z = sector->zatFloor(fv.x, fv.y);
-            cv.z = sector->zatCeiling(cv.x, cv.y);
 
-            if (pass == 1)
+            for (int k = 0; k < 2; k++)
             {
-                fv.r = fv.g = fv.b = sector->lightlevel;
-                fv.a = 255;
+                GLArray tri_floor = sector->triangles, tri_ceiling = sector->triangles;
+                for (int j = 0; j < sector->triangles.vertices.size(); j++)
+                {
+                    GLVertex& fv = tri_floor.vertices[j];
+                    GLVertex& cv = tri_ceiling.vertices[j];
 
-                cv.r = cv.g = cv.b = sector->lightlevel;
-                cv.a = 255;
+                    fv.z = sector->zatFloor(fv.x, fv.y);
+                    cv.z = sector->zatCeiling(cv.x, cv.y);
+
+                    if (k == 0)
+                    {
+                        fv.r = fv.g = fv.b = sector->lightlevel;
+                        fv.a = 255;
+
+                        cv.r = cv.g = cv.b = sector->lightlevel;
+                        cv.a = 255;
+                    }
+                    else if (k == 1)
+                    {
+                        VIEW3D_HELPER_PACKHOVERID(fv.r, fv.g, fv.b, fv.a, Hover_Floor, sector-cmap->sectors.data());
+                        VIEW3D_HELPER_PACKHOVERID(cv.r, cv.g, cv.b, cv.a, Hover_Ceiling, sector-cmap->sectors.data());
+                    }
+
+                    // set floor u/v
+                    fv.u = fv.x / flatfloor->getWidth();
+                    fv.v = fv.y / flatfloor->getHeight();
+
+                    // set ceiling u/v
+                    cv.u = cv.x / flatceiling->getWidth();
+                    cv.v = cv.y / flatceiling->getHeight();
+
+                    sector->glfloor.vertices.append(fv);
+                    sector->glceiling.vertices.append(cv);
+                }
             }
-            else if (pass == 0)
-            {
-                VIEW3D_HELPER_PACKHOVERID(fv.r, fv.g, fv.b, fv.a, Hover_Floor, sector-cmap->sectors.data());
-                VIEW3D_HELPER_PACKHOVERID(cv.r, cv.g, cv.b, cv.a, Hover_Ceiling, sector-cmap->sectors.data());
-            }
 
-            // set floor u/v
-            fv.u = fv.x / flatfloor->getWidth();
-            fv.v = fv.y / flatfloor->getHeight();
-
-            // set ceiling u/v
-            cv.u = cv.x / flatceiling->getWidth();
-            cv.v = cv.y / flatceiling->getHeight();
+            sector->glfloor.update();
+            sector->glceiling.update();
         }
 
         // draw lines around the sector.
@@ -542,29 +584,35 @@ void View3D::render(int pass)
             if (!sidedef)
                 continue; // wtf?
 
-            // dont draw 2sided yet
-            GLVertex vv1, vv2, vv3, vv4;
-            vv1.x = v1->x;
-            vv1.y = -v1->y;
-            vv1.z = sector->zatCeiling(vv1.x, -vv1.y);
+            // for hovering
+            int sd_id = sidedef-cmap->sidedefs.data();
 
-            vv2.x = v2->x;
-            vv2.y = -v2->y;
-            vv2.z = sector->zatCeiling(vv2.x, -vv2.y);
-
-            vv3.x = v2->x;
-            vv3.y = -v2->y;
-            vv3.z = sector->zatFloor(vv3.x, -vv3.y);
-
-            vv4.x = v1->x;
-            vv4.y = -v1->y;
-            vv4.z = sector->zatFloor(vv4.x, -vv4.y);
-
-            quint8 c = 255;
-
-            QLineF line = QLineF(v1->x, v1->y, v2->x, v2->y);
-            if (pass == 1)
+            // now do different processing based on line type.
+            // single-sided line:
+            if (sidedef->glupdate)
             {
+                sidedef->glupdate = false;
+
+                GLVertex vv1, vv2, vv3, vv4;
+                vv1.x = v1->x;
+                vv1.y = -v1->y;
+                vv1.z = sector->zatCeiling(vv1.x, -vv1.y);
+
+                vv2.x = v2->x;
+                vv2.y = -v2->y;
+                vv2.z = sector->zatCeiling(vv2.x, -vv2.y);
+
+                vv3.x = v2->x;
+                vv3.y = -v2->y;
+                vv3.z = sector->zatFloor(vv3.x, -vv3.y);
+
+                vv4.x = v1->x;
+                vv4.y = -v1->y;
+                vv4.z = sector->zatFloor(vv4.x, -vv4.y);
+
+                quint8 c = 255;
+
+                QLineF line = QLineF(v1->x, v1->y, v2->x, v2->y);
                 float wvl = -16;
                 float whl = 16;
                 // scary formula taken from zdoom
@@ -575,133 +623,156 @@ void View3D::render(int pass)
                 if (lite > 255) lite = 255;
                 if (lite < 0) lite = 0;
 
+                // set color
                 c = lite;
-            }
 
-            vv1.r=vv1.g=vv1.b=c;
-            vv2.r=vv2.g=vv2.b=c;
-            vv3.r=vv3.g=vv3.b=c;
-            vv4.r=vv4.g=vv4.b=c;
+                vv1.r=vv1.g=vv1.b=c;
+                vv2.r=vv2.g=vv2.b=c;
+                vv3.r=vv3.g=vv3.b=c;
+                vv4.r=vv4.g=vv4.b=c;
 
-            // for hovering
-            int sd_id = sidedef-cmap->sidedefs.data();
-
-            // now do different processing based on line type.
-            // single-sided line:
-            if (!linedef->getBack())
-            {
-                TexTexture* tex = Tex_GetTexture(sidedef->texturemiddle, TexTexture::Texture, true);
-
-                if (pass == 1)
+                sidedef->gltop.vertices.clear();
+                sidedef->glbottom.vertices.clear();
+                sidedef->glmiddle.vertices.clear();
+                if (!linedef->getBack())
                 {
+                    TexTexture* tex = Tex_GetTexture(sidedef->texturemiddle, TexTexture::Texture, true);
+
                     View3D_Helper_SetTextureOffsets(vv1, vv2, vv3, vv4, sector, 0, linedef, sidedef, line, tex, 2);
-                }
 
-                if (pass == 0)
-                {
+                    sidedef->glmiddle.vertices.append(vv1);
+                    sidedef->glmiddle.vertices.append(vv2);
+                    sidedef->glmiddle.vertices.append(vv3);
+                    sidedef->glmiddle.vertices.append(vv4);
+
                     VIEW3D_HELPER_PACKHOVERID(vv1.r, vv1.g, vv1.b, vv1.a, Hover_SidedefMiddle, sd_id);
                     VIEW3D_HELPER_PACKHOVERID(vv2.r, vv2.g, vv2.b, vv2.a, Hover_SidedefMiddle, sd_id);
                     VIEW3D_HELPER_PACKHOVERID(vv3.r, vv3.g, vv3.b, vv3.a, Hover_SidedefMiddle, sd_id);
                     VIEW3D_HELPER_PACKHOVERID(vv4.r, vv4.g, vv4.b, vv4.a, Hover_SidedefMiddle, sd_id);
+
+                    sidedef->glmiddle.vertices.append(vv1);
+                    sidedef->glmiddle.vertices.append(vv2);
+                    sidedef->glmiddle.vertices.append(vv3);
+                    sidedef->glmiddle.vertices.append(vv4);
                 }
-
-                GLArray quads;
-                quads.vertices.append(vv1);
-                quads.vertices.append(vv2);
-                quads.vertices.append(vv3);
-                quads.vertices.append(vv4);
-
-                if (pass == 1)
+                else
                 {
-                    glEnable(GL_TEXTURE_2D);
-                    glBindTexture(GL_TEXTURE_2D, tex->getTexture());
-                }
+                    // get the other sector
+                    DoomMapSector* other = (linedef->getFront()->getSector() == sector) ? linedef->getBack()->getSector() : linedef->getFront()->getSector();
+                    // make ourselves some more vertices for top and bottom linedef ending. also don't draw certain wall parts if other sector height is larger than current.
+                    // or draw. who the fuck cares.
+                    GLVertex ov1 = vv1, ov2 = vv2, ov3 = vv3, ov4 = vv4;
+                    ov1.z = std::min(sector->zatCeiling(ov1.x, -ov1.y), other->zatCeiling(ov1.x, -ov1.y));
+                    ov2.z = std::min(sector->zatCeiling(ov2.x, -ov2.y), other->zatCeiling(ov2.x, -ov2.y));
+                    ov3.z = std::max(sector->zatFloor(ov3.x, -ov3.y), other->zatFloor(ov3.x, -ov3.y));
+                    ov4.z = std::max(sector->zatFloor(ov4.x, -ov4.y), other->zatFloor(ov4.x, -ov4.y));
 
-                if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_SidedefMiddle && hoverId == sd_id) ? color_hl : QVector4D(0, 0, 0, 0));
-                quads.draw(GL_QUADS);
+                    // evaluate texture offsets
+                    TexTexture* textop = Tex_GetTexture(sidedef->texturetop, TexTexture::Texture, true);
+                    TexTexture* texbottom = Tex_GetTexture(sidedef->texturebottom, TexTexture::Texture, true);
+                    TexTexture* texmiddle = (sidedef->texturemiddle != "-") ? Tex_GetTexture(sidedef->texturemiddle, TexTexture::Texture, true) : 0;
 
-                if (pass == 1)
-                {
-                    glDisable(GL_TEXTURE_2D);
-                }
-            }
-            else
-            {
-                // get the other sector
-                DoomMapSector* other = (linedef->getFront()->getSector() == sector) ? linedef->getBack()->getSector() : linedef->getFront()->getSector();
-                // make ourselves some more vertices for top and bottom linedef ending. also don't draw certain wall parts if other sector height is larger than current.
-                // or draw. who the fuck cares.
-                GLVertex ov1 = vv1, ov2 = vv2, ov3 = vv3, ov4 = vv4;
-                ov1.z = std::min(sector->zatCeiling(ov1.x, -ov1.y), other->zatCeiling(ov1.x, -ov1.y));
-                ov2.z = std::min(sector->zatCeiling(ov2.x, -ov2.y), other->zatCeiling(ov2.x, -ov2.y));
-                ov3.z = std::max(sector->zatFloor(ov3.x, -ov3.y), other->zatFloor(ov3.x, -ov3.y));
-                ov4.z = std::max(sector->zatFloor(ov4.x, -ov4.y), other->zatFloor(ov4.x, -ov4.y));
-
-                // evaluate texture offsets
-                TexTexture* textop = Tex_GetTexture(sidedef->texturetop, TexTexture::Texture, true);
-                TexTexture* texbottom = Tex_GetTexture(sidedef->texturebottom, TexTexture::Texture, true);
-                TexTexture* texmiddle = (sidedef->texturemiddle != "-") ? Tex_GetTexture(sidedef->texturemiddle, TexTexture::Texture, true) : 0;
-
-                if (pass == 1)
-                {
                     View3D_Helper_SetTextureOffsets(vv1, vv2, ov2, ov1, sector, other, linedef, sidedef, line, textop, 0);
                     View3D_Helper_SetTextureOffsets(ov4, ov3, vv3, vv4, sector, other, linedef, sidedef, line, texbottom, 2);
-                }
 
-                GLArray quads;
+                    // top texture pass 1
+                    sidedef->gltop.vertices.append(vv1);
+                    sidedef->gltop.vertices.append(vv2);
+                    sidedef->gltop.vertices.append(ov2);
+                    sidedef->gltop.vertices.append(ov1);
 
-                // top texture
-                if (pass == 1)
-                {
-                    glEnable(GL_TEXTURE_2D);
-                    glBindTexture(GL_TEXTURE_2D, textop->getTexture());
-                }
+                    // bottom texture pass 1
+                    sidedef->glbottom.vertices.append(ov4);
+                    sidedef->glbottom.vertices.append(ov3);
+                    sidedef->glbottom.vertices.append(vv3);
+                    sidedef->glbottom.vertices.append(vv4);
 
-                if (pass == 0)
-                {
+                    // middle texture pass 1
+                    if (texmiddle != 0)
+                    {
+                        View3D_Helper_SetTextureOffsets(ov1, ov2, ov3, ov4, sector, other, linedef, sidedef, line, texmiddle, 1);
+                        sidedef->glmiddle.vertices.append(ov1);
+                        sidedef->glmiddle.vertices.append(ov2);
+                        sidedef->glmiddle.vertices.append(ov3);
+                        sidedef->glmiddle.vertices.append(ov4);
+                    }
+
+                    // top texture pass 0
                     VIEW3D_HELPER_PACKHOVERID(vv1.r, vv1.g, vv1.b, vv1.a, Hover_SidedefTop, sd_id);
                     VIEW3D_HELPER_PACKHOVERID(vv2.r, vv2.g, vv2.b, vv2.a, Hover_SidedefTop, sd_id);
                     VIEW3D_HELPER_PACKHOVERID(ov2.r, ov2.g, ov2.b, ov2.a, Hover_SidedefTop, sd_id);
                     VIEW3D_HELPER_PACKHOVERID(ov1.r, ov1.g, ov1.b, ov1.a, Hover_SidedefTop, sd_id);
-                }
 
-                quads.vertices.append(vv1);
-                quads.vertices.append(vv2);
-                quads.vertices.append(ov2);
-                quads.vertices.append(ov1);
-                if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_SidedefTop && hoverId == sd_id) ? color_hl : QVector4D(0, 0, 0, 0));
-                quads.draw(GL_QUADS);
-                quads.vertices.clear();
+                    sidedef->gltop.vertices.append(vv1);
+                    sidedef->gltop.vertices.append(vv2);
+                    sidedef->gltop.vertices.append(ov2);
+                    sidedef->gltop.vertices.append(ov1);
 
-                // bottom texture
-                if (pass == 1)
-                {
-                    glBindTexture(GL_TEXTURE_2D, texbottom->getTexture());
-                }
-
-                if (pass == 0)
-                {
+                    // bottom texture pass 0
                     VIEW3D_HELPER_PACKHOVERID(ov4.r, ov4.g, ov4.b, ov4.a, Hover_SidedefBottom, sd_id);
                     VIEW3D_HELPER_PACKHOVERID(ov3.r, ov3.g, ov3.b, ov3.a, Hover_SidedefBottom, sd_id);
                     VIEW3D_HELPER_PACKHOVERID(vv3.r, vv3.g, vv3.b, vv3.a, Hover_SidedefBottom, sd_id);
                     VIEW3D_HELPER_PACKHOVERID(vv4.r, vv4.g, vv4.b, vv4.a, Hover_SidedefBottom, sd_id);
+
+                    sidedef->glbottom.vertices.append(ov4);
+                    sidedef->glbottom.vertices.append(ov3);
+                    sidedef->glbottom.vertices.append(vv3);
+                    sidedef->glbottom.vertices.append(vv4);
+
+                    // middle texture pass 0
+                    if (texmiddle != 0)
+                    {
+                        VIEW3D_HELPER_PACKHOVERID(ov1.r, ov1.g, ov1.b, ov1.a, Hover_SidedefMiddle, sd_id);
+                        VIEW3D_HELPER_PACKHOVERID(ov2.r, ov2.g, ov2.b, ov2.a, Hover_SidedefMiddle, sd_id);
+                        VIEW3D_HELPER_PACKHOVERID(ov3.r, ov3.g, ov3.b, ov3.a, Hover_SidedefMiddle, sd_id);
+                        VIEW3D_HELPER_PACKHOVERID(ov4.r, ov4.g, ov4.b, ov4.a, Hover_SidedefMiddle, sd_id);
+
+                        sidedef->glmiddle.vertices.append(ov1);
+                        sidedef->glmiddle.vertices.append(ov2);
+                        sidedef->glmiddle.vertices.append(ov3);
+                        sidedef->glmiddle.vertices.append(ov4);
+                    }
                 }
 
-                quads.vertices.append(ov4);
-                quads.vertices.append(ov3);
-                quads.vertices.append(vv3);
-                quads.vertices.append(vv4);
-                if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_SidedefBottom && hoverId == sd_id) ? color_hl : QVector4D(0, 0, 0, 0));
-                quads.draw(GL_QUADS);
+                sidedef->gltop.update();
+                sidedef->glbottom.update();
+                sidedef->glmiddle.update();
+            }
 
-                if (pass == 1)
+            if (!linedef->getBack())
+            {
+                TexTexture* tex = Tex_GetTexture(sidedef->texturemiddle, TexTexture::Texture, true);
+
+                if (View3D_Helper_CheckAgainstModelview(sidedef->glmiddle, modelview))
                 {
-                    glDisable(GL_TEXTURE_2D);
+                    glBindTexture(GL_TEXTURE_2D, tex->getTexture());
+                    if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_SidedefMiddle && hoverId == sd_id) ? color_hl : QVector4D(0, 0, 0, 0));
+                    sidedef->glmiddle.draw(GL_QUADS, rpass*4, 4);
+                }
+            }
+            else
+            {
+                TexTexture* textop = Tex_GetTexture(sidedef->texturetop, TexTexture::Texture, true);
+                TexTexture* texbottom = Tex_GetTexture(sidedef->texturebottom, TexTexture::Texture, true);
+                TexTexture* texmiddle = (sidedef->texturemiddle != "-") ? Tex_GetTexture(sidedef->texturemiddle, TexTexture::Texture, true) : 0;
+
+                // top texture
+                if (View3D_Helper_CheckAgainstModelview(sidedef->gltop, modelview))
+                {
+                    glBindTexture(GL_TEXTURE_2D, textop->getTexture());
+                    if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_SidedefTop && hoverId == sd_id) ? color_hl : QVector4D(0, 0, 0, 0));
+                    sidedef->gltop.draw(GL_QUADS, rpass*4, 4);
                 }
 
-                // schedule sidedef
-                // calculate z coord
-                // middle texture
+                // bottom texture
+                if (View3D_Helper_CheckAgainstModelview(sidedef->glbottom, modelview))
+                {
+                    glBindTexture(GL_TEXTURE_2D, texbottom->getTexture());
+                    if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_SidedefBottom && hoverId == sd_id) ? color_hl : QVector4D(0, 0, 0, 0));
+                    sidedef->glbottom.draw(GL_QUADS, rpass*4, 4);
+                }
+
+                // schedule middle texture
                 if (texmiddle != 0)
                 {
                     ScheduledSidedef* ssd = new ScheduledSidedef();
@@ -709,28 +780,14 @@ void View3D::render(int pass)
                     ssd->color_hl = color_hl;
                     ssd->color_sel = color_sel;
                     ssd->id = sd_id;
+                    ssd->start = rpass*4;
+                    ssd->len = 4;
 
-                    View3D_Helper_SetTextureOffsets(ov1, ov2, ov3, ov4, sector, other, linedef, sidedef, line, texmiddle, 1);
-
-                    if (pass == 0)
-                    {
-                        VIEW3D_HELPER_PACKHOVERID(ov1.r, ov1.g, ov1.b, ov1.a, Hover_SidedefMiddle, sd_id);
-                        VIEW3D_HELPER_PACKHOVERID(ov2.r, ov2.g, ov2.b, ov2.a, Hover_SidedefMiddle, sd_id);
-                        VIEW3D_HELPER_PACKHOVERID(ov3.r, ov3.g, ov3.b, ov3.a, Hover_SidedefMiddle, sd_id);
-                        VIEW3D_HELPER_PACKHOVERID(ov4.r, ov4.g, ov4.b, ov4.a, Hover_SidedefMiddle, sd_id);
-                    }
-
-                    // draw midtex
-                    quads.vertices.clear();
-                    quads.vertices.append(ov1);
-                    quads.vertices.append(ov2);
-                    quads.vertices.append(ov3);
-                    quads.vertices.append(ov4);
-                    ssd->array = quads;
+                    ssd->array = sidedef->glmiddle;
                     ssd->texture = texmiddle;
 
                     // put z coord
-                    GLVertex center = quads.getCenter();
+                    GLVertex center = ssd->array.getCenter();
                     QVector3D centermult = QVector3D(center.x, center.y, center.z) * modelview;
                     ssd->z = centermult.z();
 
@@ -739,38 +796,32 @@ void View3D::render(int pass)
             }
         }
 
-        if (pass == 1)
-        {
-            glEnable(GL_TEXTURE_2D);
-            glBindTexture(GL_TEXTURE_2D, flatfloor->getTexture());
-        }
+        glBindTexture(GL_TEXTURE_2D, flatfloor->getTexture());
 
         int sec_id = sector-cmap->sectors.data();
+        int tricnt = sector->triangles.vertices.size();
 
-        glFrontFace(GL_CCW);
-        if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_Floor && hoverId == sec_id) ? color_hl : QVector4D(0, 0, 0, 0));
-        tri_floor.draw(GL_TRIANGLES);
-        glFrontFace(GL_CW);
-
-        if (pass == 1)
+        if (View3D_Helper_CheckAgainstModelview(sector->glfloor, modelview))
         {
-            glBindTexture(GL_TEXTURE_2D, flatceiling->getTexture());
+            glFrontFace(GL_CCW);
+            if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_Floor && hoverId == sec_id) ? color_hl : QVector4D(0, 0, 0, 0));
+            sector->glfloor.draw(GL_TRIANGLES, rpass*tricnt, tricnt);
+            glFrontFace(GL_CW);
         }
 
-        if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_Ceiling && hoverId == sec_id) ? color_hl : QVector4D(0, 0, 0, 0));
-        tri_ceiling.draw(GL_TRIANGLES);
-
-        if (pass == 1)
+        if (View3D_Helper_CheckAgainstModelview(sector->glceiling, modelview))
         {
-            glDisable(GL_TEXTURE_2D);
+            glBindTexture(GL_TEXTURE_2D, flatceiling->getTexture());
+            if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_Ceiling && hoverId == sec_id) ? color_hl : QVector4D(0, 0, 0, 0));
+            sector->glceiling.draw(GL_TRIANGLES, rpass*tricnt, tricnt);
         }
     }
 
+    glDisable(GL_TEXTURE_2D);
     glEnable(GL_BLEND);
 
     // draw scheduled middle textures
     qsort(scheduled.data(), scheduled.size(), sizeof(ScheduledObject*), &ScheduledObject::SortHelper);
-    if (pass == 0) midtexSelectShader.bind();
     for (int i = 0; i < scheduled.size(); i++)
     {
         ScheduledObject* o = scheduled[i];
@@ -778,7 +829,6 @@ void View3D::render(int pass)
         o->render(pass);
         delete o;
     }
-    if (pass == 0) midtexSelectShader.release();
 
     scheduled.clear();
 
@@ -789,6 +839,10 @@ void View3D::render(int pass)
         highlightShader.release();
 
         glDisable(GL_FOG);
+    }
+    else if (pass == 0)
+    {
+        midtexSelectShader.release();
     }
 
     if (pass == 1) // draw overlay

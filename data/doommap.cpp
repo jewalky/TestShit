@@ -696,4 +696,14 @@ void DoomMapSector::triangulate()
         if (!vertices.contains(v2))
             vertices.append(v2);
     }
+
+    for (int i = 0; i < linedefs.size(); i++)
+    {
+        DoomMapSidedef* sidefront = linedefs[i]->getFront();
+        DoomMapSidedef* sideback = linedefs[i]->getBack();
+        if (sidefront) sidefront->glupdate = true;
+        if (sideback) sideback->glupdate = true;
+    }
+
+    glupdate = true;
 }

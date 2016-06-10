@@ -27,6 +27,9 @@ WADFile::WADFile(QIODevice* device)
 
     qds >> numentries >> fatoffs;
 
+    WADNamespace current_ns = NS_Global;
+    QStringList namespaces; namespaces << "S" << "SS" << "F" << "FF" << "C" << "A" << "TX" << "V" << "HI" << "VX";
+
     //
     for (int i = 0; i < numentries; i++)
     {
@@ -41,11 +44,43 @@ WADFile::WADFile(QIODevice* device)
         qds.readRawData(lmp_rname, 8);
 
         QString lmp_name(lmp_rname);
+        lmp_name = lmp_name.toUpper();
+
+        bool this_ns = false;
+        for (int j = 0; j < namespaces.size(); j++)
+        {
+            if (lmp_name == namespaces[j]+"_START")
+            {
+                if (namespaces[j] == "S" || namespaces[j] == "SS")
+                    current_ns = NS_Sprites;
+                else if (namespaces[j] == "F" || namespaces[j] == "FF")
+                    current_ns = NS_Flats;
+                else if (namespaces[j] == "C")
+                    current_ns = NS_Colormaps;
+                else if (namespaces[j] == "A")
+                    current_ns = NS_ACS;
+                else if (namespaces[j] == "TX")
+                    current_ns = NS_Textures;
+                else if (namespaces[j] == "V")
+                    current_ns = NS_Voices;
+                else if (namespaces[j] == "HI")
+                    current_ns = NS_Hires;
+                else if (namespaces[j] == "VX")
+                    current_ns = NS_Voxels;
+                else current_ns = NS_Global;
+                this_ns = true;
+            }
+            else if (lmp_name == namespaces[j]+"_END")
+            {
+                current_ns = NS_Global;
+                this_ns = true;
+            }
+        }
 
         device->seek(zoffs+lmp_offset);
         QByteArray lmp_data = device->read(lmp_len);
 
-        WADEntry* ent = new WADEntry(lmp_name.toUpper(), lmp_offset, lmp_data);
+        WADEntry* ent = new WADEntry(lmp_name.toUpper(), lmp_offset, this_ns?NS_Global:current_ns, lmp_data);
         entries.append(ent);
     }
 
@@ -96,12 +131,14 @@ void WADFile::putEntry(int num, WADEntry* ent)
     entries.insert(num, ent);
 }
 
-int WADFile::getNumForName(QString name, int num)
+int WADFile::getNumForName(QString name, int num, WADNamespace ns)
 {
     name = name.toUpper();
     for (int i = num; i < entries.size(); i++)
     {
         if (!entries[i])
+            continue;
+        if (ns != NS_Any && entries[i]->getNamespace() != ns)
             continue;
         if (entries[i]->getName().toUpper() == name)
             return i;
@@ -110,15 +147,17 @@ int WADFile::getNumForName(QString name, int num)
     return -1;
 }
 
-int WADFile::getLastNumForName(QString name, int num)
+int WADFile::getLastNumForName(QString name, int num, WADNamespace ns)
 {
-    if (num >= getSize())
+    if (num >= getSize() || num < 0)
         num = getSize()-1;
 
     name = name.toUpper();
     for (int i = num; i >= 0; i--)
     {
         if (!entries[i])
+            continue;
+        if (ns != NS_Any && entries[i]->getNamespace() != ns)
             continue;
         if (entries[i]->getName().toUpper() == name)
             return i;

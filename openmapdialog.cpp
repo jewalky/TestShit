@@ -75,12 +75,13 @@ void OpenMapDialog::on_buttonBox_accepted()
     MainWindow::get()->setMap(map);
 
     // init texture manager for this map.
-    QVector<TexResource> resources;
+    QVector<TexResource> resources = ui->resourceList->getResources();
     TexResource ownwad;
     ownwad.type = TexResource::WAD;
     ownwad.name = filename;
     resources.append(ownwad);
     Tex_SetWADList(resources);
+
     delete wad;
 }
 

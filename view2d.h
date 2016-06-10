@@ -65,6 +65,7 @@ private:
     int scrollMouseY;
 
     GLArray linesArray;
+    bool linesUpdate;
 };
 
 #endif // VIEW2D_H

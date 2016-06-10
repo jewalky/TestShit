@@ -21,7 +21,9 @@ SOURCES += main.cpp\
     view2d.cpp \
     glarray.cpp \
     view3d.cpp \
-    data/texman.cpp
+    data/texman.cpp \
+    resourcelistwidget.cpp \
+    resourceeditdialog.cpp
 
 HEADERS  += mainwindow.h \
     data/doommap.h \
@@ -30,10 +32,14 @@ HEADERS  += mainwindow.h \
     view2d.h \
     glarray.h \
     view3d.h \
-    data/texman.h
+    data/texman.h \
+    resourcelistwidget.h \
+    resourceeditdialog.h
 
 FORMS    += mainwindow.ui \
-    openmapdialog.ui
+    openmapdialog.ui \
+    resourcelistwidget.ui \
+    resourceeditdialog.ui
 
 include(../QxPoly2Tri/QxPoly2Tri.pri)
 

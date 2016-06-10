@@ -27,6 +27,8 @@ View2D::View2D(QWidget* parent) : QGLWidget(GetView2DFormat(), parent)
     scrollY = 0;
     scale = 0.5;
     gridSize = 32;
+
+    linesUpdate = false;
 }
 
 void View2D::initializeGL()
@@ -53,6 +55,12 @@ void View2D::paintGL()
         return;
 
     //
+    if (linesUpdate)
+    {
+        linesUpdate = false;
+        linesArray.update();
+    }
+
     linesArray.draw(GL_LINES);
 
     // draw sectors HUEHUEHUEHUEHUE
@@ -131,6 +139,7 @@ void View2D::initMap()
             linesArray.vertices.append(v2);
         }
     }
+    linesUpdate = true;
 }
 
 void View2D::mouseMoveEvent(QMouseEvent* e)

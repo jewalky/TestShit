@@ -21,6 +21,27 @@ static void PutTexture(QMap<QString, TexTexture*>& m, QString name, TexTexture* 
     else m.remove(name);
 }
 
+static bool FindLastLump(WADFile*& resource, WADEntry*& entry, QString filename, WADNamespace ns)
+{
+    entry = 0;
+    resource = 0;
+
+    for (int i = Resources.size()-1; i >= 0; i--)
+    {
+        WADFile* wad = Resources[i].resource;
+        if (!wad) continue;
+
+        int num = wad->getLastNumForName(filename, -1, ns);
+        if (num < 0) continue;
+
+        entry = wad->getEntry(num);
+        resource = wad;
+        return true;
+    }
+
+    return false;
+}
+
 int TexTexture::getTexture()
 {
     if (texture != 0)
@@ -84,7 +105,7 @@ void Tex_SetWADList(QVector<TexResource> wads)
 }
 
 // todo: write a separate patch loading routine for use with sprites
-static TexTexture* RenderTexture(WADFile* wad, DoomTexture1Texture& tex)
+static TexTexture* RenderTexture(DoomTexture1Texture& tex)
 {
     //qDebug("Tex_Reload: found texture \"%s\"", tex.name.toUpper().toUtf8().data());
     // I'm lazy to write fast blitting procedures here. maybe later.
@@ -98,11 +119,14 @@ static TexTexture* RenderTexture(WADFile* wad, DoomTexture1Texture& tex)
     for (int i = 0; i < tex.patches.size(); i++)
     {
         DoomTexture1Patch& patch = tex.patches[i];
-        int pnum = wad->getLastNumForName(patch.name);
-        if (pnum < 0) // invalid patch, ignore. todo: log error
-            continue;
 
-        QDataStream patch_stream(wad->getEntry(pnum)->getData());
+        // find patch
+        WADFile* rPatch; WADEntry* ePatch;
+        // first search under Patches namespace. this is used to resolve conflicts instead of "strict patches" flag like GZDB does it.
+        if (!FindLastLump(rPatch, ePatch, patch.name, NS_Patches) &&
+                !FindLastLump(rPatch, ePatch, patch.name, NS_Global)) continue;
+
+        QDataStream patch_stream(ePatch->getData());
         patch_stream.setByteOrder(QDataStream::LittleEndian);
 
         // read patch headers
@@ -121,6 +145,12 @@ static TexTexture* RenderTexture(WADFile* wad, DoomTexture1Texture& tex)
         for (int x = 0; x < width; x++)
         {
             //qDebug("column %d at %08X", x, columns[x]);
+            if (columns[x] > patch_stream.device()->size()-1) // invalid patch
+            {
+                qDebug("RenderTexture: warning: invalid patch %s, seek to %08X", patch.name.toUtf8().data(), columns[x]);
+                break;
+            }
+
             patch_stream.device()->seek(columns[x]);
             while (true)
             {
@@ -129,7 +159,7 @@ static TexTexture* RenderTexture(WADFile* wad, DoomTexture1Texture& tex)
                 quint8 garbage;
 
                 patch_stream >> ystart;
-                if (ystart == 0xFF)
+                if (ystart == 0xFF || patch_stream.device()->atEnd())
                     break; // end of span
 
                 patch_stream >> num >> garbage;
@@ -163,40 +193,20 @@ void Tex_Reload()
 
     // first, find playpal.
     // note: currently only working with WAD files.
-    QVector<WADFile*> wads;
     for (int i = 0; i < Resources.size(); i++)
+        Resources[i].reload();
+
+    qDebug("Tex_Reload: looking for PLAYPAL...");
+    WADFile* rPlaypal; WADEntry* ePlaypal;
+    if (!FindLastLump(rPlaypal, ePlaypal, "PLAYPAL", NS_Global))
     {
-        if (Resources[i].type != TexResource::WAD)
-        {
-            qDebug("Tex_Reload: error: non-WAD types aren't supported yet");
-            wads.append(0);
-            continue;
-        }
-
-        WADFile* wad = WADFile::fromFile(Resources[i].name);
-        if (!wad)
-        {
-            qDebug("Tex_Reload: error: couldn't open \"%s\"", Resources[i].name.toUtf8().data());
-            wads.append(0);
-            continue;
-        }
-
-        qDebug("Tex_Reload: added \"%s\"...", Resources[i].name.toUtf8().data());
-        wads.append(wad);
+        qDebug("Tex_Reload: warning: no PLAYPAL loaded.");
+        for (int i = 0; i < 256; i++)
+            Playpal[i] = (0xFF000000) | (i << 16) | (i << 8) | (i);
     }
-
-    bool playpalfound = false;
-    for (int i = 0; i < wads.size(); i++)
+    else
     {
-        if (!wads[i])
-            continue;
-
-        qDebug("Tex_Reload: searching for PLAYPAL in \"%s\"...", Resources[i].name.toUtf8().data());
-        int playpal = wads[i]->getLastNumForName("PLAYPAL");
-        if (playpal < 0)
-            continue;
-
-        QByteArray& playdata = wads[i]->getEntry(playpal)->getData();
+        QByteArray& playdata = ePlaypal->getData();
         for (int j = 0; j < 256; j++)
         {
             int r = (quint8)playdata[j*3];
@@ -205,67 +215,60 @@ void Tex_Reload()
             Playpal[j] = (0xFF000000) | (r << 16) | (g << 8) | (b);
         }
 
-        qDebug("Tex_Reload: loaded PLAYPAL.");
-        playpalfound = true;
+        qDebug("Tex_Reload: PLAYPAL loaded.");
     }
 
-    if (!playpalfound)
+    // get flats
+    for (int i = 0; i < Resources.size(); i++)
     {
-        qDebug("Tex_Reload: warning: no PLAYPAL loaded.");
-        for (int i = 0; i < 256; i++)
-            Playpal[i] = (0xFF000000) | (i << 16) | (i << 8) | (i);
-    }
+        WADFile* wad = Resources[i].resource;
+        if (!wad) continue;
 
-    for (int i = 0; i < wads.size(); i++)
-    {
-        if (!wads[i])
-            continue;
+        qDebug("Tex_Reload: loading flats from \"%s\"...", Resources[i].name.toUtf8().data());
 
-        qDebug("Tex_Reload: processing \"%s\"...", Resources[i].name.toUtf8().data());
-        // fetch all flats.
-        int fnum = 0;
-        while (true)
+        for (int j = 0; j < wad->getSize(); j++)
         {
-            int f_start = wads[i]->getNumForName("F_START", fnum);
-            int ff_start = wads[i]->getNumForName("FF_START", fnum);
-            int cs = (f_start>=0&&ff_start>=0) ? std::min(f_start, ff_start) : std::max(f_start, ff_start);
-            if (cs < 0)
-                break;
+            if (wad->getEntry(j)->getNamespace() != NS_Flats)
+                continue;
 
-            WADEntry* ent = wads[i]->getEntry(cs);
-            QString lastent = (ent->getName()=="F_START")?"F_END":"FF_END";
-            int ce = wads[i]->getNumForName(lastent, cs+1);
-            fnum = ce+1;
+            WADEntry* flat = wad->getEntry(j);
+            if (flat->getData().size() != 4096)
+                continue;
 
-            // everything between cs+1 and ce-1 (inclusive) is a flat.
-            for (int j = cs+1; j < ce; j++)
-            {
-                WADEntry* flat = wads[i]->getEntry(j);
-                if (flat->getData().size() != 4096)
-                    continue;
+            //qDebug("Tex_Reload: found flat \"%s\"", flat->getName().toUpper().toUtf8().data());
+            quint32* flatpixels = new quint32[4096];
+            QByteArray& flatindices = flat->getData();
+            for (int k = 0; k < 4096; k++)
+                flatpixels[k] = Playpal[(quint8)flatindices[k]];
 
-                //qDebug("Tex_Reload: found flat \"%s\"", flat->getName().toUpper().toUtf8().data());
-                quint32* flatpixels = new quint32[4096];
-                QByteArray& flatindices = flat->getData();
-                for (int k = 0; k < 4096; k++)
-                    flatpixels[k] = Playpal[(quint8)flatindices[k]];
-
-                PutTexture(Flats, flat->getName().toUpper(), new TexTexture(64, 64, flatpixels));
-            }
+            PutTexture(Flats, flat->getName().toUpper(), new TexTexture(64, 64, flatpixels));
         }
-
-        // fetch all textures.
-        QVector<DoomTexture1Texture> texture1 = Tex_ReadTexture1(wads[i], "TEXTURE1");
-        QVector<DoomTexture1Texture> texture2 = Tex_ReadTexture1(wads[i], "TEXTURE2");
-        qDebug("%d texture1 textures, %d texture2 textures", texture1.size(), texture2.size());
-        for (int j = 0; j < texture1.size(); j++)
-            PutTexture(Textures, texture1[j].name.toUpper(), RenderTexture(wads[i], texture1[j]));
-        for (int j = 0; j < texture2.size(); j++)
-            PutTexture(Textures, texture2[j].name.toUpper(), RenderTexture(wads[i], texture2[j]));
-
-        delete wads[i];
-        wads[i] = 0;
     }
+
+    // get TEXTUREx
+
+    WADFile* rTexture1; WADEntry* eTexture1;
+    WADFile* rTexture2; WADEntry* eTexture2;
+
+    qDebug("Tex_Reload: looking for TEXTUREx...");
+
+    if (FindLastLump(rTexture1, eTexture1, "TEXTURE1", NS_Global))
+    {
+        QVector<DoomTexture1Texture> texture1 = Tex_ReadTexture1(eTexture1);
+        for (int j = 0; j < texture1.size(); j++)
+            PutTexture(Textures, texture1[j].name.toUpper(), RenderTexture(texture1[j]));
+        qDebug("Tex_Reload: TEXTURE1 loaded.");
+    }
+
+    if (FindLastLump(rTexture2, eTexture2, "TEXTURE2", NS_Global))
+    {
+        QVector<DoomTexture1Texture> texture2 = Tex_ReadTexture1(eTexture2);
+        for (int j = 0; j < texture2.size(); j++)
+            PutTexture(Textures, texture2[j].name.toUpper(), RenderTexture(texture2[j]));
+        qDebug("Tex_Reload: TEXTURE2 loaded.");
+    }
+
+    qDebug("Tex_Reload: finished.");
 }
 
 TexTexture* Tex_GetTexture(QString name, TexTexture::Type preferredtype, bool stricttype)
@@ -299,19 +302,19 @@ TexTexture* Tex_GetTexture(QString name, TexTexture::Type preferredtype, bool st
     return Embedded_BrokenTexture;
 }
 
-QVector<DoomTexture1Texture> Tex_ReadTexture1(WADFile* wad, QString lumpname)
+QVector<DoomTexture1Texture> Tex_ReadTexture1(WADEntry* ent)
 {
     QVector<DoomTexture1Texture> out;
-    int texturex = wad->getLastNumForName(lumpname);
-    if (texturex < 0)
-        return out;
     // first read PNAMES, if we can't read PNAMES, return null
-    int pnames = wad->getLastNumForName("PNAMES");
+    /*int pnames = wad->getLastNumForName("PNAMES");
     if (pnames < 0)
+        return out;*/
+    WADFile* rPnames; WADEntry* ePnames;
+    if (!FindLastLump(rPnames, ePnames, "PNAMES", NS_Global))
         return out;
 
     QStringList pnames_unp;
-    QDataStream pnames_stream(wad->getEntry(pnames)->getData());
+    QDataStream pnames_stream(ePnames->getData());
     pnames_stream.setByteOrder(QDataStream::LittleEndian);
 
     quint32 pnames_len;
@@ -326,7 +329,7 @@ QVector<DoomTexture1Texture> Tex_ReadTexture1(WADFile* wad, QString lumpname)
 
     // now, read the actual texture directory
     bool strife = false;
-    QDataStream texturex_stream(wad->getEntry(texturex)->getData());
+    QDataStream texturex_stream(ent->getData());
     texturex_stream.setByteOrder(QDataStream::LittleEndian);
 
     quint32 numtextures;

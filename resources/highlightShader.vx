@@ -8,5 +8,5 @@ void main(void)
     gl_FrontColor = gl_Color;
 
     vec3 vVertex = vec3(gl_ModelViewMatrix * gl_Vertex);
-    fogZ = abs(vVertex.z);//length(vVertex);
+    fogZ = -vVertex.z;//length(vVertex);
 }

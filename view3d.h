@@ -53,6 +53,9 @@ public:
         Hover_VertexBottom
     };
 
+    float getRDist() { return rdist; }
+    void setRDist(float rd) { if (rd < 100) rd = 100; if (rd > 32767) rd = 32767; rdist = rd; }
+
 public slots:
     void repaintTimerHandler();
 
@@ -62,6 +65,8 @@ private:
 
     QTimer* repaintTimer;
     bool wasVisible;
+
+    float rdist;
 
     float posX;
     float posY;
