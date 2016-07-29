@@ -5,6 +5,7 @@
 #include <cmath> // M_PI, tan()
 #include <QApplication>
 #include "data/texman.h"
+#include <QTime>
 
 static const QGLFormat& GetView3DFormat()
 {
@@ -24,7 +25,7 @@ View3D::View3D(QWidget* parent) : QGLWidget(GetView3DFormat(), parent, MainWindo
 
     repaintTimer = new QTimer(this);
     connect(repaintTimer, SIGNAL(timeout()), this, SLOT(repaintTimerHandler()));
-    repaintTimer->setInterval(26); // ~30fps
+    repaintTimer->setInterval(2); // ~30fps
     repaintTimer->start();
 
     wasVisible = false;
@@ -480,6 +481,9 @@ void View3D::render(int pass)
     if (!cmap)
         return;
 
+    QTime gt;
+    gt.start();
+
     int rpass = 1;
 
     if (pass == 1)
@@ -495,6 +499,15 @@ void View3D::render(int pass)
 
     QVector<ScheduledObject*> scheduled;
 
+    int et_visibility = 0;
+    int et_gettexture = 0;
+    int et_glupdate = 0;
+    int et_cullarray = 0;
+    int et_drawplanes = 0;
+    int et_drawwalls = 0;
+    QTime et;
+    QTime et2;
+
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
     glEnable(GL_DEPTH_TEST);
@@ -507,18 +520,26 @@ void View3D::render(int pass)
     {
         DoomMapSector* sector = &cmap->sectors[i];
         // dont render if too far
+        et.start();
         if (!sector->isAnyWithin(posX, -posY, rdist+64))
+        {
+            et_visibility += et.elapsed();
             continue;
+        }
+        et_visibility += et.elapsed();
         ds++;
 
         // find ceiling texture
         // this NEVER returns null. at most - embedded resource that says "BROKEN TEXTURE"
+        et.start();
         TexTexture* flatceiling = Tex_GetTexture(sector->textureceiling, TexTexture::Flat, true);
         TexTexture* flatfloor = Tex_GetTexture(sector->texturefloor, TexTexture::Flat, true);
+        et_gettexture += et.elapsed();
 
         // draw sector's floor and ceiling first
         if (sector->glupdate)
         {
+            et.start();
             sector->glupdate = false;
             sector->glfloor.vertices.clear();
             sector->glceiling.vertices.clear();
@@ -564,6 +585,7 @@ void View3D::render(int pass)
 
             sector->glfloor.update();
             sector->glceiling.update();
+            et_glupdate += et.elapsed();
         }
 
         // draw lines around the sector.
@@ -585,6 +607,7 @@ void View3D::render(int pass)
             // single-sided line:
             if (sidedef->glupdate)
             {
+                et.start();
                 sidedef->glupdate = false;
 
                 GLVertex vv1, vv2, vv3, vv4;
@@ -630,7 +653,9 @@ void View3D::render(int pass)
                 sidedef->glmiddle.vertices.clear();
                 if (!linedef->getBack())
                 {
+                    et2.start();
                     TexTexture* tex = Tex_GetTexture(sidedef->texturemiddle, TexTexture::Texture, true);
+                    et_gettexture += et2.elapsed();
 
                     View3D_Helper_SetTextureOffsets(vv1, vv2, vv3, vv4, sector, 0, linedef, sidedef, line, tex, 2);
 
@@ -662,9 +687,11 @@ void View3D::render(int pass)
                     ov4.z = std::max(sector->zatFloor(ov4.x, -ov4.y), other->zatFloor(ov4.x, -ov4.y));
 
                     // evaluate texture offsets
+                    et2.start();
                     TexTexture* textop = Tex_GetTexture(sidedef->texturetop, TexTexture::Texture, true);
                     TexTexture* texbottom = Tex_GetTexture(sidedef->texturebottom, TexTexture::Texture, true);
                     TexTexture* texmiddle = (sidedef->texturemiddle != "-") ? Tex_GetTexture(sidedef->texturemiddle, TexTexture::Texture, true) : 0;
+                    et_gettexture += et2.elapsed();
 
                     View3D_Helper_SetTextureOffsets(vv1, vv2, ov2, ov1, sector, other, linedef, sidedef, line, textop, 0);
                     View3D_Helper_SetTextureOffsets(ov4, ov3, vv3, vv4, sector, other, linedef, sidedef, line, texbottom, 2);
@@ -731,6 +758,7 @@ void View3D::render(int pass)
                 sidedef->gltop.update();
                 sidedef->glbottom.update();
                 sidedef->glmiddle.update();
+                et_glupdate += et.elapsed();
             }
 
             if (!linedef->getBack())
@@ -751,20 +779,29 @@ void View3D::render(int pass)
                 TexTexture* texmiddle = (sidedef->texturemiddle != "-") ? Tex_GetTexture(sidedef->texturemiddle, TexTexture::Texture, true) : 0;
 
                 // top texture
+                et.start();
                 if (cullArray(sidedef->gltop))
                 {
+                    et_cullarray += et.elapsed();
                     glBindTexture(GL_TEXTURE_2D, textop->getTexture());
                     if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_SidedefTop && hoverId == sd_id) ? color_hl : QVector4D(0, 0, 0, 0));
+                    et.start();
                     sidedef->gltop.draw(GL_QUADS, rpass*4, 4);
+                    et_drawwalls += et.elapsed();
                 }
+                else et_cullarray += et.elapsed();
 
                 // bottom texture
                 if (cullArray(sidedef->glbottom))
                 {
+                    et_cullarray += et.elapsed();
                     glBindTexture(GL_TEXTURE_2D, texbottom->getTexture());
                     if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_SidedefBottom && hoverId == sd_id) ? color_hl : QVector4D(0, 0, 0, 0));
+                    et.start();
                     sidedef->glbottom.draw(GL_QUADS, rpass*4, 4);
+                    et_drawwalls += et.elapsed();
                 }
+                else et_cullarray += et.elapsed();
 
                 // schedule middle texture
                 if (texmiddle != 0)
@@ -795,20 +832,30 @@ void View3D::render(int pass)
         int sec_id = sector-cmap->sectors.data();
         int tricnt = sector->triangles.vertices.size();
 
+        et.start();
         if (cullArray(sector->glfloor))
         {
+            et_cullarray += et.elapsed();
             glFrontFace(GL_CCW);
             if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_Floor && hoverId == sec_id) ? color_hl : QVector4D(0, 0, 0, 0));
+            et.start();
             sector->glfloor.draw(GL_TRIANGLES, rpass*tricnt, tricnt);
+            et_drawplanes += et.elapsed();
             glFrontFace(GL_CW);
         }
+        else et_cullarray += et.elapsed();
 
+        et.start();
         if (cullArray(sector->glceiling))
         {
+            et_cullarray += et.elapsed();
             glBindTexture(GL_TEXTURE_2D, flatceiling->getTexture());
             if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_Ceiling && hoverId == sec_id) ? color_hl : QVector4D(0, 0, 0, 0));
+            et.start();
             sector->glceiling.draw(GL_TRIANGLES, rpass*tricnt, tricnt);
+            et_drawplanes += et.elapsed();
         }
+        else et_cullarray += et.elapsed();
     }
 
     glDisable(GL_TEXTURE_2D);
@@ -816,6 +863,7 @@ void View3D::render(int pass)
 
     // draw scheduled middle textures
     qsort(scheduled.data(), scheduled.size(), sizeof(ScheduledObject*), &ScheduledObject::SortHelper);
+    et.start();
     for (int i = 0; i < scheduled.size(); i++)
     {
         ScheduledObject* o = scheduled[i];
@@ -823,6 +871,15 @@ void View3D::render(int pass)
         o->render(pass);
         delete o;
     }
+    et_drawwalls += et.elapsed();
+
+    /*    qint64 et_visibility = 0;
+    qint64 et_gettexture = 0;
+    qint64 et_glupdate = 0;
+    qint64 et_cullarray = 0;
+    qint64 et_drawplanes = 0;
+    qint64 et_drawwalls = 0;*/
+    //qDebug("et_visibility = %d; et_gettexture = %d; et_glupdate = %d; et_cullarray = %d; et_drawplanes = %d; et_drawwalls = %d;", et_visibility, et_gettexture, et_glupdate, et_cullarray, et_drawplanes, et_drawwalls);
 
     scheduled.clear();
 
@@ -844,6 +901,8 @@ void View3D::render(int pass)
         setClipRect(0, 0, width(), height());
         renderOverlay();
     }
+
+    qDebug("pass = %d; time = %dms", pass, gt.elapsed());
 }
 
 void View3D::setClipRect(int x, int y, int w, int h)
@@ -881,6 +940,7 @@ void View3D::renderOverlay()
 
 bool View3D::cullArray(GLArray& a)
 {
+
     for (int i = 0; i < a.vertices.size(); i++)
     {
         GLVertex& v = a.vertices[i];
