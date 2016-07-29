@@ -141,6 +141,8 @@ void View3D::repaintTimerHandler()
     if (!isVisible())
         return;
 
+    updateMouseAngle();
+
     // move the player
     float dx = 0;
     float dy = 0;
@@ -149,7 +151,7 @@ void View3D::repaintTimerHandler()
     if (moveLeft) dx -= 1;
     if (moveRight) dx += 1;
 
-    float movemul = 14;
+    float movemul = 8;
     if (running)
         movemul *= 3;
 
@@ -179,8 +181,10 @@ void View3D::initMap()
     moveForward = moveBackward = moveLeft = moveRight = 0;
 }
 
-void View3D::mouseMoveEvent(QMouseEvent* e)
+void View3D::updateMouseAngle()
 {
+    QPoint oldcpos = mapFromGlobal(QCursor::pos());
+
     int deltaX = 0, deltaY = 0;
 
     // check if center. ignore events that point to widget's center, as these are our own events.
@@ -188,23 +192,26 @@ void View3D::mouseMoveEvent(QMouseEvent* e)
 
     if (mouseXLast >= 0 && mouseYLast >= 0)
     {
-        deltaX = center.x()-e->pos().x();
-        deltaY = center.y()-e->pos().y();
+        deltaX = center.x()-oldcpos.x();
+        deltaY = center.y()-oldcpos.y();
 
-        float mper1 = 4;
-        angX += (float)deltaY / mper1;
+        //if (deltaX) deltaX = (deltaX < 0) ? -1 : 1;
+        //if (deltaY) deltaY = (deltaY < 0) ? -1 : 1;
+
+        float mper1 = 0.25;
+        angX += (float)deltaY * mper1;
         if (angX < -90) angX = -90;
         else if (angX > 90) angX = 90;
 
-        angZ += (float)deltaX / mper1;
+        angZ += (float)deltaX * mper1;
         while (angZ < 0)
             angZ += 360;
         while (angZ > 360)
             angZ -= 360;
     }
 
-    mouseXLast = e->x();
-    mouseYLast = e->y();
+    mouseXLast = oldcpos.x();
+    mouseYLast = oldcpos.y();
 
     QCursor c = cursor();
     c.setPos(mapToGlobal(center));
@@ -486,11 +493,13 @@ void View3D::render(int pass)
 
     int rpass = 1;
 
+    int hlcolor = 0;
     if (pass == 1)
     {
         rpass = 0;
         highlightShader.bind();
         highlightShader.setUniformValue("uFogSize", QVector2D(rdist-64, rdist));
+        hlcolor = highlightShader.uniformLocation("uHighlightColor");
     }
     else if (pass == 0)
     {
@@ -768,7 +777,7 @@ void View3D::render(int pass)
                 if (cullArray(sidedef->glmiddle))
                 {
                     glBindTexture(GL_TEXTURE_2D, tex->getTexture());
-                    if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_SidedefMiddle && hoverId == sd_id) ? color_hl : QVector4D(0, 0, 0, 0));
+                    if (pass == 1) highlightShader.setUniformValue(hlcolor, (hoverType == Hover_SidedefMiddle && hoverId == sd_id) ? color_hl : QVector4D(0, 0, 0, 0));
                     sidedef->glmiddle.draw(GL_QUADS, rpass*4, 4);
                 }
             }
@@ -784,7 +793,7 @@ void View3D::render(int pass)
                 {
                     et_cullarray += et.elapsed();
                     glBindTexture(GL_TEXTURE_2D, textop->getTexture());
-                    if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_SidedefTop && hoverId == sd_id) ? color_hl : QVector4D(0, 0, 0, 0));
+                    if (pass == 1) highlightShader.setUniformValue(hlcolor, (hoverType == Hover_SidedefTop && hoverId == sd_id) ? color_hl : QVector4D(0, 0, 0, 0));
                     et.start();
                     sidedef->gltop.draw(GL_QUADS, rpass*4, 4);
                     et_drawwalls += et.elapsed();
@@ -796,7 +805,7 @@ void View3D::render(int pass)
                 {
                     et_cullarray += et.elapsed();
                     glBindTexture(GL_TEXTURE_2D, texbottom->getTexture());
-                    if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_SidedefBottom && hoverId == sd_id) ? color_hl : QVector4D(0, 0, 0, 0));
+                    if (pass == 1) highlightShader.setUniformValue(hlcolor, (hoverType == Hover_SidedefBottom && hoverId == sd_id) ? color_hl : QVector4D(0, 0, 0, 0));
                     et.start();
                     sidedef->glbottom.draw(GL_QUADS, rpass*4, 4);
                     et_drawwalls += et.elapsed();
@@ -837,7 +846,7 @@ void View3D::render(int pass)
         {
             et_cullarray += et.elapsed();
             glFrontFace(GL_CCW);
-            if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_Floor && hoverId == sec_id) ? color_hl : QVector4D(0, 0, 0, 0));
+            if (pass == 1) highlightShader.setUniformValue(hlcolor, (hoverType == Hover_Floor && hoverId == sec_id) ? color_hl : QVector4D(0, 0, 0, 0));
             et.start();
             sector->glfloor.draw(GL_TRIANGLES, rpass*tricnt, tricnt);
             et_drawplanes += et.elapsed();
@@ -850,7 +859,7 @@ void View3D::render(int pass)
         {
             et_cullarray += et.elapsed();
             glBindTexture(GL_TEXTURE_2D, flatceiling->getTexture());
-            if (pass == 1) highlightShader.setUniformValue("uHighlightColor", (hoverType == Hover_Ceiling && hoverId == sec_id) ? color_hl : QVector4D(0, 0, 0, 0));
+            if (pass == 1) highlightShader.setUniformValue(hlcolor, (hoverType == Hover_Ceiling && hoverId == sec_id) ? color_hl : QVector4D(0, 0, 0, 0));
             et.start();
             sector->glceiling.draw(GL_TRIANGLES, rpass*tricnt, tricnt);
             et_drawplanes += et.elapsed();
@@ -867,7 +876,7 @@ void View3D::render(int pass)
     for (int i = 0; i < scheduled.size(); i++)
     {
         ScheduledObject* o = scheduled[i];
-        if (pass == 1) highlightShader.setUniformValue("uHighlightColor", o->getHighlight(pass));
+        if (pass == 1) highlightShader.setUniformValue(hlcolor, o->getHighlight(pass));
         o->render(pass);
         delete o;
     }
@@ -888,8 +897,6 @@ void View3D::render(int pass)
     if (pass == 1)
     {
         highlightShader.release();
-
-        glDisable(GL_FOG);
     }
     else if (pass == 0)
     {
@@ -902,7 +909,7 @@ void View3D::render(int pass)
         renderOverlay();
     }
 
-    qDebug("pass = %d; time = %dms", pass, gt.elapsed());
+    //qDebug("pass = %d; time = %dms", pass, gt.elapsed());
 }
 
 void View3D::setClipRect(int x, int y, int w, int h)
